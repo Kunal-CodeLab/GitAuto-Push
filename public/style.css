@@ -1416,3 +1416,36 @@ footer {
   box-shadow: 0 0 12px var(--border-glow);
   background: rgba(10, 11, 18, 0.8);
 }
+
+/* Footer styling */
+footer {
+  text-align: center;
+  padding: 2.5rem 1.5rem;
+  margin-top: auto;
+  border-top: 1px solid var(--border-color);
+  background: rgba(10, 11, 18, 0.6);
+  backdrop-filter: blur(14px);
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+footer p {
+  margin: 0;
+}
+
+footer .made-by {
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--secondary-color);
+  background: linear-gradient(135deg, var(--secondary-color), var(--secondary-hover));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: 0 0 10px rgba(6, 182, 212, 0.2);
+  letter-spacing: 0.5px;
+}
