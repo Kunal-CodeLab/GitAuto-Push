@@ -4,10 +4,6 @@
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D%2014.0.0-green.svg)](https://nodejs.org/)
 [![Developer](https://img.shields.io/badge/Made%20By-Kunal%20Choudhary-cyan.svg)](#-author)
 
----
-
-## 👑 Made By Kunal Choudhary
-
 **GitAuto Push** is a premium, developer-focused automation tool designed to eliminate the friction of managing Git repositories. Built with a stunning dark glassmorphic user interface and powered by a robust Node.js backend, GitAuto Push handles repository initialization, configuration, file tracking, change detection, and pushing to remote repositories—all from a single, unified dashboard.
 
 ---
