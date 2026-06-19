@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GitAuto Push - Git Automation Tool</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="stars-bg"></div>
+  <div class="glowing-orb orb-purple"></div>
+  <div class="glowing-orb orb-cyan"></div>
+
+  <header>
+    <div class="logo-area">
+      <div class="logo-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="18" cy="18" r="3"></circle>
+          <circle cx="6" cy="6" r="3"></circle>
+          <circle cx="6" cy="18" r="3"></circle>
+          <path d="M18 15V9a4 4 0 0 0-4-4H9"></path>
+          <line x1="6" y1="9" x2="6" y2="15"></line>
+        </svg>
+      </div>
+      <div class="logo-text">
+        <h1>GitAuto Push</h1>
+        <p>Zero-friction repository automation</p>
+      </div>
+    </div>
+    <div id="server-status" class="server-status disconnected">
+      <span class="status-dot"></span>
+      <span class="status-label">Server Disconnected</span>
+    </div>
+  </header>
+
+  <div class="app-layout">
+    <!-- LEFT SIDEBAR: PROJECTS DASHBOARD -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h2>Active Workspaces</h2>
+      </div>
+      <div id="project-list" class="project-list">
+        <p class="field-hint" style="text-align: center; margin-top: 1rem;">No workspaces scanned yet.</p>
+      </div>
+    </aside>
+
+    <main class="dashboard">
+      <!-- LEFT PANEL: CONFIGURATION -->
+      <section class="config-panel">
+      <!-- Local Directory Setup -->
+      <div class="card glass">
+        <div class="card-header">
+          <span class="step-num">01</span>
+          <h2>Local Folder Path</h2>
+        </div>
+        <div class="card-body">
+          <div class="input-group">
+            <input type="text" id="local-path" list="recent-folders-list" placeholder="e.g. C:\Users\Anonymous\my-project" autocomplete="off" />
+            <datalist id="recent-folders-list"></datalist>
+            <button id="btn-scan" class="btn btn-secondary">Scan Folder</button>
+          </div>
+          <div id="scan-feedback" class="status-feedback hidden"></div>
+        </div>
+      </div>
+
+      <!-- Remote Repo Setup -->
+      <div class="card glass">
+        <div class="card-header">
+          <span class="step-num">02</span>
+          <h2>GitHub Repository URL</h2>
+        </div>
+        <div class="card-body">
+          <div class="input-group-vertical">
+            <label for="repo-url">Repository URL</label>
+            <input type="text" id="repo-url" placeholder="e.g. https://github.com/username/repo-name" autocomplete="off" />
+          </div>
+
+          <div class="create-repo-section">
+            <button type="button" id="btn-toggle-create-repo" class="btn-text-toggle">
+              <span>[+] Or Create New Repo on GitHub</span>
+            </button>
+            
+            <div id="create-repo-fields" class="create-repo-fields hidden">
+              <div class="input-group-vertical">
+                <label for="new-repo-name">New Repository Name</label>
+                <input type="text" id="new-repo-name" placeholder="e.g. my-project-name" autocomplete="off" />
+              </div>
+              <div class="repo-privacy-selector">
+                <label>
+                  <input type="radio" name="repo-privacy" value="public" checked />
+                  Public Repository
+                </label>
+                <label>
+                  <input type="radio" name="repo-privacy" value="private" />
+                  Private Repository
+                </label>
+              </div>
+              <button type="button" id="btn-create-repo-action" class="btn btn-secondary" style="width: 100%; font-size: 0.85rem; padding: 0.6rem;">
+                <span>Create Repository</span>
+              </button>
+              <div id="create-repo-feedback" class="status-feedback hidden"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Git User Identity Override -->
+      <div class="card glass">
+        <div class="card-header">
+          <span class="step-num">03</span>
+          <h2>Git Identity & Account Info</h2>
+        </div>
+        <div class="card-body">
+          <div class="git-info-box">
+            <p><strong>System Global Config:</strong></p>
+            <div class="config-pairs">
+              <div>Name: <span id="global-name-val" class="accent-text">Scanning...</span></div>
+              <div>Email: <span id="global-email-val" class="accent-text">Scanning...</span></div>
+            </div>
+          </div>
+
+          <div class="toggle-container">
+            <label class="switch-label">
+              <input type="checkbox" id="override-identity-toggle" />
+              <span class="switch-slider"></span>
+            </label>
+            <span class="toggle-text">Use custom credentials (Avoids account/Gmail mismatch issues)</span>
+          </div>
+
+          <div id="identity-fields" class="identity-fields hidden">
+            <div class="form-row">
+              <div class="input-group-vertical">
+                <label for="git-username">Git Username</label>
+                <input type="text" id="git-username" placeholder="e.g. Rahul Sharma" autocomplete="off" />
+              </div>
+              <div class="input-group-vertical">
+                <label for="git-email">Git Email (Gmail)</label>
+                <input type="text" id="git-email" placeholder="e.g. rahul@gmail.com" autocomplete="off" />
+              </div>
+            </div>
+            <div class="toggle-container" style="margin-top: 0.2rem; margin-bottom: 0.2rem;">
+              <label class="switch-label">
+                <input type="checkbox" id="save-identity-toggle" />
+                <span class="switch-slider"></span>
+              </label>
+              <span class="toggle-text">Remember custom identity on this device</span>
+            </div>
+            <div class="info-alert warning">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="alert-icon">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+              <span>This email will be recorded locally inside this project's git config. It will not change your global git settings!</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Authentication & Options -->
+      <div class="card glass">
+        <div class="card-header">
+          <span class="step-num">04</span>
+          <h2>Authentication & Commit Settings</h2>
+        </div>
+        <div class="card-body">
+          <div class="input-group-vertical token-group">
+            <div class="label-with-help">
+              <label for="github-token">GitHub Personal Access Token (PAT) <span class="badge">Recommended</span></label>
+              <a href="#" class="help-link" id="help-pat-link">How to get a PAT?</a>
+            </div>
+            <div class="password-input-wrapper">
+              <input type="password" id="github-token" placeholder="Paste ghp_xxxx... token to bypass login popups" autocomplete="off" />
+              <button type="button" id="btn-toggle-token" class="btn-toggle-view">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="eye-icon-show"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+              </button>
+            </div>
+            <div class="toggle-container" style="margin-top: 0.5rem; margin-bottom: 0.2rem;">
+              <label class="switch-label">
+                <input type="checkbox" id="save-token-toggle" />
+                <span class="switch-slider"></span>
+              </label>
+              <span class="toggle-text">Remember token securely on this device</span>
+            </div>
+            <p class="field-hint">Note: Stored in your local browser storage if enabled.</p>
+          </div>
+
+          <div class="form-row">
+            <div class="input-group-vertical flex-grow-2">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <label for="commit-msg">Commit Message</label>
+                <button type="button" id="btn-suggest-message" class="btn-suggest hidden">🪄 Suggest Message</button>
+              </div>
+              <input type="text" id="commit-msg" value="Initial commit via GitAuto Push" placeholder="e.g. Initial commit" autocomplete="off" />
+            </div>
+            <div class="input-group-vertical">
+              <label for="branch-name">Branch Name</label>
+              <input type="text" id="branch-name" value="main" placeholder="e.g. main" autocomplete="off" />
+            </div>
+          </div>
+
+          <div class="option-switches">
+            <div class="toggle-container" style="margin-bottom: 0.5rem;">
+              <label class="switch-label">
+                <input type="checkbox" id="gitignore-toggle" checked />
+                <span class="switch-slider"></span>
+              </label>
+              <span class="toggle-text">Auto-create .gitignore if missing (Node/Python defaults)</span>
+            </div>
+            <div class="toggle-container" style="margin-bottom: 0.5rem;">
+              <label class="switch-label">
+                <input type="checkbox" id="force-push-toggle" />
+                <span class="switch-slider"></span>
+              </label>
+              <span class="toggle-text">Force Push (Overwrites remote branch files if out of sync)</span>
+            </div>
+            
+            <!-- Pre-Push Checks Toggle & Input -->
+            <div class="toggle-container" style="margin-bottom: 0.5rem;">
+              <label class="switch-label">
+                <input type="checkbox" id="prepush-toggle" />
+                <span class="switch-slider"></span>
+              </label>
+              <span class="toggle-text">Run test checks command before pushing</span>
+            </div>
+            <div id="prepush-command-group" class="input-group-vertical hidden" style="margin-top: 0.2rem; margin-bottom: 0.8rem; margin-left: 3.2rem; width: calc(100% - 3.2rem);">
+              <label for="prepush-cmd">Test Command</label>
+              <input type="text" id="prepush-cmd" placeholder="e.g. npm test or pytest" autocomplete="off" />
+            </div>
+
+            <!-- Auto-Backup Watchdog Sync Toggle -->
+            <div class="toggle-container" style="margin-bottom: 0.5rem;">
+              <label class="switch-label">
+                <input type="checkbox" id="backup-toggle" />
+                <span class="switch-slider"></span>
+              </label>
+              <span class="toggle-text">Continuous Sync / Auto-Backup (Watchdog Mode)</span>
+            </div>
+            
+            <div id="backup-config-fields" class="backup-controls hidden" style="margin-left: 3.2rem; width: calc(100% - 3.2rem);">
+              <div class="backup-status-indicator">
+                <span class="status-dot" id="backup-dot" style="background-color: var(--text-dim); box-shadow: none; width: 8px; height: 8px; margin-top: 0;"></span>
+                <span id="backup-status-text">Backup: Inactive</span>
+              </div>
+              <div class="backup-logs-title">Sync Logs</div>
+              <pre id="backup-logs" class="backup-logs-preview">Logs will appear here once active...</pre>
+            </div>
+          </div>
+
+          <button id="btn-push-action" class="btn btn-primary btn-glowing disabled" disabled>
+            <span>Run Git Push Automation</span>
+            <svg class="arrow-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+              <polyline points="12 5 19 12 12 19"></polyline>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT PANEL: LIVE PROCESS PROGRESS & TERMINAL LOGS -->
+    <section class="status-panel">
+      <!-- Current Repo Summary -->
+      <div class="card glass">
+        <div class="card-header">
+          <h2>Project Scan Status</h2>
+        </div>
+        <div class="card-body">
+            <div class="status-grid">
+              <div class="status-item">
+                <span class="status-title">Path Resolved</span>
+                <span id="stat-path" class="status-value">-</span>
+              </div>
+              <div class="status-item">
+                <span class="status-title">Git Initialized</span>
+                <span id="stat-git-init" class="status-value">-</span>
+              </div>
+              <div class="status-item">
+                <span class="status-title">Current Branch</span>
+                <span id="stat-branch" class="status-value">-</span>
+              </div>
+              <div class="status-item">
+                <span class="status-title">Existing Commits</span>
+                <span id="stat-commits" class="status-value">-</span>
+              </div>
+              <div class="status-item status-item-full" id="file-changes-container">
+                <span class="status-title">Pending Local Changes</span>
+                <div id="stat-changes-summary" class="status-value">-</div>
+                <div id="stat-changes-list" class="changes-list hidden"></div>
+              </div>
+            </div>
+        </div>
+      </div>
+
+      <!-- Automation Stepper Checklist -->
+      <div class="card glass">
+        <div class="card-header">
+          <h2>Execution Roadmap</h2>
+        </div>
+        <div class="card-body">
+          <div class="stepper">
+            <!-- Step 1: Init -->
+            <div class="step" id="step-init" data-step="init">
+              <div class="step-indicator">
+                <div class="step-icon"></div>
+              </div>
+              <div class="step-details">
+                <h3>Initialize Git Repository</h3>
+                <p>Run <code>git init</code> if directory is not a Git repo.</p>
+              </div>
+            </div>
+
+            <!-- Step 2: Configure Identity -->
+            <div class="step" id="step-config" data-step="config">
+              <div class="step-indicator">
+                <div class="step-icon"></div>
+              </div>
+              <div class="step-details">
+                <h3>Set Git User Name & Email</h3>
+                <p>Configure local user credentials for commits.</p>
+              </div>
+            </div>
+
+            <!-- Step 3: Stage Files -->
+            <div class="step" id="step-stage" data-step="stage">
+              <div class="step-indicator">
+                <div class="step-icon"></div>
+              </div>
+              <div class="step-details">
+                <h3>Stage Local Files</h3>
+                <p>Add untracked and modified files via <code>git add .</code>.</p>
+              </div>
+            </div>
+
+            <!-- Step 4: Commit -->
+            <div class="step" id="step-commit" data-step="commit">
+              <div class="step-indicator">
+                <div class="step-icon"></div>
+              </div>
+              <div class="step-details">
+                <h3>Commit Changes</h3>
+                <p>Save staged updates into local history with commit message.</p>
+              </div>
+            </div>
+
+            <!-- Step 5: Rename Branch -->
+            <div class="step" id="step-branch" data-step="branch">
+              <div class="step-indicator">
+                <div class="step-icon"></div>
+              </div>
+              <div class="step-details">
+                <h3>Rename Default Branch</h3>
+                <p>Ensure target branch is set to requested name (default <code>main</code>).</p>
+              </div>
+            </div>
+
+            <!-- Step 6: Remote URL -->
+            <div class="step" id="step-remote" data-step="remote">
+              <div class="step-indicator">
+                <div class="step-icon"></div>
+              </div>
+              <div class="step-details">
+                <h3>Configure Remote Origin</h3>
+                <p>Connect repository to target URL (with auth token).</p>
+              </div>
+            </div>
+
+            <!-- Step 7: Push -->
+            <div class="step" id="step-push" data-step="push">
+              <div class="step-indicator">
+                <div class="step-icon"></div>
+              </div>
+              <div class="step-details">
+                <h3>Push to GitHub Repository</h3>
+                <p>Execute <code>git push -u origin [branch]</code> to upload code.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Real-time Console Logs -->
+      <div class="card glass console-card">
+        <div class="card-header console-header">
+          <div class="console-controls">
+            <span class="dot red"></span>
+            <span class="dot yellow"></span>
+            <span class="dot green"></span>
+          </div>
+          <span class="console-title">git-push-logs.sh</span>
+          <button id="btn-clear-logs" class="btn-clear">Clear</button>
+        </div>
+        <div class="console-body">
+          <pre id="console-logs">System ready. Waiting for directory path scan and push action...</pre>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+  <!-- HELP MODAL FOR PAT -->
+  <div id="pat-modal" class="modal-overlay hidden">
+    <div class="modal glass">
+      <div class="modal-header">
+        <h2>How to Generate a GitHub PAT (Token)</h2>
+        <button id="btn-close-modal" class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>A Personal Access Token (PAT) allows this automation tool to securely push your code to GitHub without triggering username/password credential prompt popups, especially when managing multiple GitHub accounts.</p>
+        <ol>
+          <li>Login to your account on <a href="https://github.com" target="_blank">GitHub.com</a>.</li>
+          <li>Click on your profile picture in the top-right corner and go to <strong>Settings</strong>.</li>
+          <li>Scroll down in the left sidebar and click on <strong>Developer Settings</strong>.</li>
+          <li>Select <strong>Personal Access Tokens</strong> &rarr; <strong>Tokens (classic)</strong>.</li>
+          <li>Click <strong>Generate new token</strong> &rarr; <strong>Generate new token (classic)</strong>.</li>
+          <li>Enter a note (e.g. <code>GitAutoPush Tool</code>) and select the expiration.</li>
+          <li>Check the box for <strong>repo</strong> (Full control of private repositories). This is required!</li>
+          <li>Scroll to the bottom and click <strong>Generate token</strong>.</li>
+          <li><strong>Copy the token immediately!</strong> (It starts with <code>ghp_</code>). You will not be able to see it again.</li>
+          <li>Paste the token into the input field in this tool.</li>
+        </ol>
+        <div class="info-alert info">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="alert-icon">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+          <span>Security Note: This token is processed entirely on your local machine and is never sent to any external server (except GitHub itself during push authentication).</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SUCCESS MODAL -->
+  <div id="success-modal" class="modal-overlay hidden">
+    <div class="modal glass success-modal-card">
+      <div class="modal-header success-modal-header">
+        <div class="success-icon-badge">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+        </div>
+        <h2>Success! Push Completed</h2>
+      </div>
+      <div class="modal-body success-modal-body">
+        <p>Congratulations! Your repository has been initialized, committed, and pushed successfully.</p>
+        
+        <div class="success-actions">
+          <button id="btn-success-open-pr-modal" class="btn btn-primary btn-pr-link hidden" style="width: 100%; margin-bottom: 0.5rem; padding: 0.8rem;">
+            <span>🪄 Create Pull Request (PR)</span>
+          </button>
+          <a href="#" id="btn-open-github" target="_blank" class="btn btn-primary btn-github-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path>
+            </svg>
+            <span>Open Repository on GitHub</span>
+          </a>
+          <button id="btn-close-success" class="btn btn-secondary" style="width: 100%; margin-top: 0.5rem; padding: 0.8rem;">Done</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PULL REQUEST MODAL -->
+  <div id="pr-modal" class="modal-overlay hidden">
+    <div class="modal glass">
+      <div class="modal-header">
+        <h2>Create GitHub Pull Request (PR)</h2>
+        <button id="btn-close-pr-modal" class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>Your branch has been pushed. You can now automatically open a Pull Request (PR) to merge changes into the default branch.</p>
+        
+        <div class="input-group-vertical" style="margin-top: 0.8rem;">
+          <label for="pr-title">PR Title</label>
+          <input type="text" id="pr-title" placeholder="e.g. feat: add automated backup watcher" autocomplete="off" />
+        </div>
+        
+        <div class="input-group-vertical" style="margin-top: 0.8rem;">
+          <label for="pr-body">PR Description</label>
+          <textarea id="pr-body" class="textarea-field" placeholder="Describe the changes made in this branch..." autocomplete="off"></textarea>
+        </div>
+        
+        <div class="form-row" style="margin-top: 0.8rem;">
+          <div class="input-group-vertical">
+            <label for="pr-base">Base Branch (Destination)</label>
+            <input type="text" id="pr-base" value="main" placeholder="e.g. main" autocomplete="off" />
+          </div>
+          <div class="input-group-vertical">
+            <label for="pr-head">Head Branch (Source)</label>
+            <input type="text" id="pr-head" placeholder="Current branch" readonly style="background: rgba(10, 11, 18, 0.3); color: var(--text-muted);" />
+          </div>
+        </div>
+
+        <button type="button" id="btn-create-pr-action" class="btn btn-primary btn-pr-link" style="margin-top: 1.2rem; width: 100%;">
+          <span>Create Pull Request</span>
+        </button>
+        <div id="pr-feedback" class="status-feedback hidden"></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <p>Designed and Built by Antigravity AI Code Companion</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
