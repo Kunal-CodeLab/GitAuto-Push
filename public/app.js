@@ -20,6 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const branchNameInput = document.getElementById('branch-name');
   const gitignoreToggle = document.getElementById('gitignore-toggle');
   const forcePushToggle = document.getElementById('force-push-toggle');
+  const autoCommitMsgToggle = document.getElementById('auto-commit-msg-toggle');
   const btnPushAction = document.getElementById('btn-push-action');
   
   const statPath = document.getElementById('stat-path');
@@ -80,6 +81,42 @@ document.addEventListener('DOMContentLoaded', () => {
   loadRecentFolders();
   loadSavedToken();
   loadSavedIdentity();
+  loadSavedAutoCommitSetting();
+
+  function loadSavedAutoCommitSetting() {
+    try {
+      const isAuto = localStorage.getItem('auto_commit_msg') !== 'false';
+      autoCommitMsgToggle.checked = isAuto;
+      updateCommitMsgInputState();
+    } catch (e) {
+      console.error('Error loading auto-commit setting:', e);
+    }
+  }
+
+  function updateCommitMsgInputState() {
+    const isAuto = autoCommitMsgToggle.checked;
+    commitMsgInput.disabled = isAuto;
+    if (isAuto) {
+      commitMsgInput.value = latestSuggestedMessage || 'Auto-generated based on changes';
+      btnSuggestMessage.classList.add('hidden');
+    } else {
+      if (commitMsgInput.value === 'Auto-generated based on changes') {
+        commitMsgInput.value = latestSuggestedMessage || 'Initial commit via GitAuto Push';
+      }
+      if (latestSuggestedMessage) {
+        btnSuggestMessage.classList.remove('hidden');
+      }
+    }
+  }
+
+  autoCommitMsgToggle.addEventListener('change', () => {
+    try {
+      localStorage.setItem('auto_commit_msg', autoCommitMsgToggle.checked ? 'true' : 'false');
+      updateCommitMsgInputState();
+    } catch (e) {
+      console.error('Error saving auto-commit setting:', e);
+    }
+  });
 
   // Recent folders history management and Sidebar rendering
   function loadRecentFolders() {
@@ -205,28 +242,37 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Token storage management
-  function loadSavedToken() {
+  async function loadSavedToken() {
     try {
-      const savedToken = localStorage.getItem('github_pat');
-      const isSaved = localStorage.getItem('save_pat_enabled') === 'true';
-      
-      saveTokenToggle.checked = isSaved;
-      if (isSaved && savedToken) {
-        githubTokenInput.value = savedToken;
+      const response = await fetch('/api/settings/token-check');
+      const data = await response.json();
+      if (data.hasToken) {
+        saveTokenToggle.checked = true;
+        githubTokenInput.value = '••••••••••••••••••••';
+      } else {
+        saveTokenToggle.checked = false;
+        githubTokenInput.value = '';
       }
     } catch (e) {
       console.error('Error loading token:', e);
     }
   }
 
-  function handleTokenStorageChange() {
+  async function handleTokenStorageChange() {
     try {
       const isSaved = saveTokenToggle.checked;
-      localStorage.setItem('save_pat_enabled', isSaved ? 'true' : 'false');
       if (isSaved) {
-        localStorage.setItem('github_pat', githubTokenInput.value.trim());
+        const token = githubTokenInput.value.trim();
+        if (token && token !== '••••••••••••••••••••') {
+          await fetch('/api/settings/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token })
+          });
+        }
       } else {
-        localStorage.removeItem('github_pat');
+        await fetch('/api/settings/token-delete', { method: 'POST' });
+        githubTokenInput.value = '';
       }
     } catch (e) {
       console.error('Error saving token:', e);
@@ -234,9 +280,28 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   saveTokenToggle.addEventListener('change', handleTokenStorageChange);
-  githubTokenInput.addEventListener('input', () => {
+  
+  githubTokenInput.addEventListener('input', async () => {
     if (saveTokenToggle.checked) {
-      localStorage.setItem('github_pat', githubTokenInput.value.trim());
+      const token = githubTokenInput.value.trim();
+      if (token && token !== '••••••••••••••••••••') {
+        try {
+          await fetch('/api/settings/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token })
+          });
+        } catch (e) {
+          console.error('Error updating token:', e);
+        }
+      }
+    }
+  });
+
+  // Clear mask if user starts typing in a masked token field
+  githubTokenInput.addEventListener('focus', () => {
+    if (githubTokenInput.value === '••••••••••••••••••••') {
+      githubTokenInput.value = '';
     }
   });
 
@@ -436,10 +501,10 @@ document.addEventListener('DOMContentLoaded', () => {
       // Auto-suggest commit message
       if (data.suggestedCommitMessage) {
         latestSuggestedMessage = data.suggestedCommitMessage;
-        btnSuggestMessage.classList.remove('hidden');
       } else {
-        btnSuggestMessage.classList.add('hidden');
+        latestSuggestedMessage = '';
       }
+      updateCommitMsgInputState();
 
       // Guess repository name based on scanned path
       if (dirPath) {
@@ -720,6 +785,7 @@ document.addEventListener('DOMContentLoaded', () => {
     sseUrl.searchParams.append('branch', branchName);
     sseUrl.searchParams.append('forcePush', forcePush ? 'true' : 'false');
     sseUrl.searchParams.append('createGitignore', createGitignore ? 'true' : 'false');
+    sseUrl.searchParams.append('autoCommitMsg', autoCommitMsgToggle.checked ? 'true' : 'false');
     
     if (useOverride) {
       if (gitName) sseUrl.searchParams.append('username', gitName);
@@ -796,7 +862,14 @@ document.addEventListener('DOMContentLoaded', () => {
     saveIdentityToggle.disabled = disabled;
     saveTokenToggle.disabled = disabled;
     githubTokenInput.disabled = disabled;
-    commitMsgInput.disabled = disabled;
+    autoCommitMsgToggle.disabled = disabled;
+    
+    if (disabled) {
+      commitMsgInput.disabled = true;
+    } else {
+      updateCommitMsgInputState();
+    }
+    
     branchNameInput.disabled = disabled;
     gitignoreToggle.disabled = disabled;
     forcePushToggle.disabled = disabled;
@@ -822,6 +895,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const forcePush = forcePushToggle.checked;
     const createGitignore = gitignoreToggle.checked;
     const prePushCmd = prepushToggle.checked ? prepushCmdInput.value.trim() : '';
+    const autoCommitMsg = autoCommitMsgToggle.checked;
 
     if (!dirPath || !repoUrl) {
       backupToggle.checked = false;
@@ -830,6 +904,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (backupToggle.checked) {
+      // Request desktop notification permission securely when starting backup
+      if ("Notification" in window && Notification.permission === "default") {
+        Notification.requestPermission();
+      }
       backupConfigFields.classList.remove('hidden');
       updateBackupStatus('starting', 'Starting sync...');
       
@@ -837,7 +915,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const response = await fetch('/api/backup/start', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ dirPath, repoUrl, token, branch, commitMessage, forcePush, createGitignore, prePushCmd })
+          body: JSON.stringify({ dirPath, repoUrl, token, branch, commitMessage, forcePush, createGitignore, prePushCmd, autoCommitMsg })
         });
         const data = await response.json();
         if (data.success) {
@@ -886,8 +964,29 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (state === 'starting') {
       backupDot.classList.add('mini');
       backupDot.style.backgroundColor = 'var(--warning-color)';
+    } else if (state === 'syncing') {
+      backupDot.classList.add('mini');
+      backupDot.style.backgroundColor = 'var(--warning-color)';
+    } else if (state === 'conflict') {
+      backupDot.classList.add('mini');
+      backupDot.style.backgroundColor = 'var(--error-color)';
+      backupDot.style.boxShadow = '0 0 10px var(--error-color)';
     } else if (state === 'inactive') {
       backupDot.style.backgroundColor = 'var(--text-dim)';
+    }
+  }
+
+  // Desktop Notification helper
+  let lastNotificationTime = 0;
+  function showDesktopNotification(title, body) {
+    if (!("Notification" in window) || Notification.permission !== "granted") {
+      return;
+    }
+    // Throttle notifications to once every 30 seconds to prevent annoying the user
+    const now = Date.now();
+    if (now - lastNotificationTime > 30000) {
+      new Notification(title, { body });
+      lastNotificationTime = now;
     }
   }
 
@@ -917,6 +1016,18 @@ document.addEventListener('DOMContentLoaded', () => {
           backupLogs.textContent = 'Waiting for changes...';
         }
         backupLogs.scrollTop = backupLogs.scrollHeight;
+
+        // Update UI dot based on status
+        if (data.status === 'conflict') {
+          updateBackupStatus('conflict', 'Backup: Merge Conflict! Resolve manually.');
+          showDesktopNotification('GitAuto Push: Merge Conflict', `Folder "${dirPath}" has a merge conflict with GitHub. Resolve it manually.`);
+        } else if (data.status === 'syncing') {
+          updateBackupStatus('syncing', 'Backup: Syncing changes...');
+        } else if (data.status === 'error') {
+          updateBackupStatus('conflict', 'Backup: Sync Error! Check logs.');
+        } else {
+          updateBackupStatus('active', 'Backup: Watcher Active');
+        }
       } else if (!data.active) {
         backupToggle.checked = false;
         updateBackupStatus('inactive', 'Backup: Terminated');
@@ -935,7 +1046,17 @@ document.addEventListener('DOMContentLoaded', () => {
       if (data.active) {
         backupToggle.checked = true;
         backupConfigFields.classList.remove('hidden');
-        updateBackupStatus('active', 'Backup: Watcher Active');
+        
+        if (data.status === 'conflict') {
+          updateBackupStatus('conflict', 'Backup: Merge Conflict! Resolve manually.');
+        } else if (data.status === 'syncing') {
+          updateBackupStatus('syncing', 'Backup: Syncing changes...');
+        } else if (data.status === 'error') {
+          updateBackupStatus('conflict', 'Backup: Sync Error! Check logs.');
+        } else {
+          updateBackupStatus('active', 'Backup: Watcher Active');
+        }
+        
         startBackupPolling(dirPath);
       } else {
         backupToggle.checked = false;

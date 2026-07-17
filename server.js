@@ -2,10 +2,14 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
-const { spawn, execSync } = require('child_process');
+const { spawn, execSync, exec } = require('child_process');
 
 const app = express();
 const PORT = process.env.PORT || 5005;
+
+// Disable interactive Git prompts and credential manager popups globally
+process.env.GIT_TERMINAL_PROMPT = '0';
+process.env.GCM_INTERACTIVE = 'never';
 
 // Global map to hold active backup watchers
 const backupWatchers = new Map();
@@ -31,6 +35,36 @@ function checkGitInstalled() {
   } catch (e) {
     return false;
   }
+}
+
+// Helper to run commands asynchronously and get output
+function runCmdAsync(cmd, cwd = process.cwd()) {
+  return new Promise((resolve) => {
+    exec(cmd, { cwd, encoding: 'utf8' }, (error, stdout) => {
+      resolve(error ? '' : stdout.trim());
+    });
+  });
+}
+
+// Helper to check if Git is installed asynchronously
+function checkGitInstalledAsync() {
+  return new Promise((resolve) => {
+    exec('git --version', (error) => {
+      resolve(!error);
+    });
+  });
+}
+
+// Helper to get stored GitHub PAT token from server-side config file
+function getStoredToken() {
+  try {
+    const configPath = path.join(__dirname, 'config.json');
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      return config.githubToken || '';
+    }
+  } catch (e) {}
+  return '';
 }
 
 // Helper to generate rule-based commit message suggestions
@@ -83,7 +117,7 @@ function generateSuggestedCommitMessage(fileChanges, hasCommits) {
 }
 
 // Endpoint to check path details
-app.post('/api/check-path', (req, res) => {
+app.post('/api/check-path', async (req, res) => {
   const { dirPath } = req.body;
 
   if (!dirPath) {
@@ -111,9 +145,9 @@ app.post('/api/check-path', (req, res) => {
 
   const isGitRepo = fs.existsSync(path.join(resolvedPath, '.git'));
   
-  // Get Git configs
-  const globalName = runCmdSync('git config --global user.name');
-  const globalEmail = runCmdSync('git config --global user.email');
+  // Get Git configs asynchronously (non-blocking)
+  const globalName = await runCmdAsync('git config --global user.name');
+  const globalEmail = await runCmdAsync('git config --global user.email');
   
   let localName = '';
   let localEmail = '';
@@ -123,19 +157,19 @@ app.post('/api/check-path', (req, res) => {
   let fileChanges = { modified: 0, untracked: 0, deleted: 0, total: 0, files: [] };
 
   if (isGitRepo) {
-    localName = runCmdSync('git config --local user.name', resolvedPath);
-    localEmail = runCmdSync('git config --local user.email', resolvedPath);
-    currentBranch = runCmdSync('git branch --show-current', resolvedPath) || 'main';
+    localName = await runCmdAsync('git config --local user.name', resolvedPath);
+    localEmail = await runCmdAsync('git config --local user.email', resolvedPath);
+    currentBranch = (await runCmdAsync('git branch --show-current', resolvedPath)) || 'main';
     
     // Auto-detect Remote URL
-    remoteUrl = runCmdSync('git remote get-url origin', resolvedPath);
+    remoteUrl = await runCmdAsync('git remote get-url origin', resolvedPath);
     if (remoteUrl) {
       // Mask credentials/PAT if they are embedded in remote URL
       remoteUrl = remoteUrl.replace(/https?:\/\/[^@\n]+@/g, 'https://');
     }
 
     // Get live file changes status preview
-    const statusOutput = runCmdSync('git status --porcelain', resolvedPath);
+    const statusOutput = await runCmdAsync('git status --porcelain', resolvedPath);
     if (statusOutput) {
       const lines = statusOutput.split('\n');
       lines.forEach(line => {
@@ -158,13 +192,12 @@ app.post('/api/check-path', (req, res) => {
       });
     }
 
-    // Check if repo has any commits
-    try {
-      execSync('git rev-parse --verify HEAD', { cwd: resolvedPath, stdio: 'ignore' });
-      hasCommits = true;
-    } catch (e) {
-      hasCommits = false;
-    }
+    // Check if repo has any commits asynchronously
+    hasCommits = await new Promise((resolve) => {
+      exec('git rev-parse --verify HEAD', { cwd: resolvedPath }, (error) => {
+        resolve(!error);
+      });
+    });
   }
 
   return res.json({
@@ -201,6 +234,11 @@ app.get('/api/git-push', (req, res) => {
     createGitignore,
     prePushCmd
   } = req.query;
+
+  let tokenVal = token;
+  if (!tokenVal || tokenVal.trim() === '' || tokenVal === '••••••••••••••••••••') {
+    tokenVal = getStoredToken();
+  }
 
   // Set SSE Headers
   res.writeHead(200, {
@@ -248,7 +286,7 @@ app.get('/api/git-push', (req, res) => {
     res.end();
     return;
   }
-
+  
   // Helper function to run command as promise with live stdout/stderr
   const runCommand = (cmd, args, stepName) => {
     return new Promise((resolve, reject) => {
@@ -256,11 +294,12 @@ app.get('/api/git-push', (req, res) => {
       
       // Mask token in output for logs
       const maskToken = (str) => {
-        if (!token) return str;
-        return str.replace(new RegExp(token, 'g'), 'ghp_******');
+        if (!tokenVal) return str;
+        return str.replace(new RegExp(tokenVal, 'g'), 'ghp_******');
       };
 
-      const proc = spawn(cmd, args, { cwd: resolvedPath, shell: true });
+      const finalArgs = (cmd === 'git') ? ['-c', 'credential.helper=', ...args] : args;
+      const proc = spawn(cmd, finalArgs, { cwd: resolvedPath, shell: true });
       let stdout = '';
       let stderr = '';
 
@@ -310,7 +349,7 @@ app.get('/api/git-push', (req, res) => {
 
       const isGitRepo = fs.existsSync(path.join(resolvedPath, '.git'));
       const targetBranch = branch ? branch.trim() : 'main';
-      const msg = commitMessage ? commitMessage.trim() : 'Initial commit via GitAuto Push';
+      let msg = commitMessage ? commitMessage.trim() : 'Initial commit via GitAuto Push';
 
       // --- STEP 1: Init Git ---
       sendStep('init', 'running');
@@ -499,6 +538,31 @@ app.get('/api/git-push', (req, res) => {
       sendStep('commit', 'running');
       sendLog('Committing staged changes...');
       try {
+        if (req.query.autoCommitMsg === 'true') {
+          const statusOutput = runCmdSync('git status --porcelain', resolvedPath);
+          if (statusOutput) {
+            const tempFileChanges = { modified: 0, untracked: 0, deleted: 0, total: 0, files: [] };
+            const lines = statusOutput.split('\n');
+            lines.forEach(line => {
+              if (!line || line.trim() === '') return;
+              tempFileChanges.total++;
+              const code = line.substring(0, 2);
+              const filePath = line.substring(3).trim();
+              tempFileChanges.files.push({ code: code.trim(), path: filePath });
+            });
+            let hasCommits = false;
+            try {
+              execSync('git rev-parse --verify HEAD', { cwd: resolvedPath, stdio: 'ignore' });
+              hasCommits = true;
+            } catch (e) {
+              hasCommits = false;
+            }
+            msg = generateSuggestedCommitMessage(tempFileChanges, hasCommits);
+          } else {
+            msg = 'Minor updates';
+          }
+          sendLog(`Auto-generated commit message: "${msg}"`);
+        }
         await runCommand('git', ['commit', '-m', `"${msg}"`], 'commit');
         sendStep('commit', 'success');
       } catch (err) {
@@ -523,8 +587,8 @@ app.get('/api/git-push', (req, res) => {
       
       // Format remote URL with token if provided
       let remoteUrlWithAuth = repoUrl.trim();
-      if (token && token.trim()) {
-        const cleanToken = token.trim();
+      if (tokenVal && tokenVal.trim()) {
+        const cleanToken = tokenVal.trim();
         const rawUrl = repoUrl.trim();
         if (rawUrl.startsWith('https://')) {
           remoteUrlWithAuth = `https://${cleanToken}@` + rawUrl.substring(8);
@@ -544,11 +608,21 @@ app.get('/api/git-push', (req, res) => {
       }
       
       // Print masked remote URL to logs
-      const maskedUrl = token ? repoUrl : remoteUrlWithAuth;
+      const maskedUrl = tokenVal ? repoUrl : remoteUrlWithAuth;
       sendLog(`Configured remote URL: ${maskedUrl}`);
       sendStep('remote', 'success');
 
       // --- REMOTE SYNC CHECK (FETCH & REBASE PULL) ---
+      let hasCommits = false;
+      if (isGitRepo) {
+        try {
+          execSync('git rev-parse --verify HEAD', { cwd: resolvedPath, stdio: 'ignore' });
+          hasCommits = true;
+        } catch (e) {
+          hasCommits = false;
+        }
+      }
+
       if (isGitRepo && hasCommits) {
         sendLog('Checking for remote updates before pushing...');
         try {
@@ -624,7 +698,12 @@ app.get('/api/git-push', (req, res) => {
 app.post('/api/create-repo', (req, res) => {
   const { token, repoName, isPrivate } = req.body;
 
-  if (!token) {
+  let tokenVal = token;
+  if (!tokenVal || tokenVal.trim() === '' || tokenVal === '••••••••••••••••••••') {
+    tokenVal = getStoredToken();
+  }
+
+  if (!tokenVal) {
     return res.status(400).json({ error: 'GitHub Personal Access Token (PAT) is required' });
   }
   if (!repoName) {
@@ -643,7 +722,7 @@ app.post('/api/create-repo', (req, res) => {
     path: '/user/repos',
     method: 'POST',
     headers: {
-      'Authorization': `token ${token.trim()}`,
+      'Authorization': `token ${tokenVal.trim()}`,
       'Accept': 'application/vnd.github.v3+json',
       'User-Agent': 'GitAutoPush-App',
       'Content-Type': 'application/json',
@@ -695,11 +774,17 @@ async function runGitPushPipeline({
   forcePush,
   createGitignore,
   prePushCmd,
+  autoCommitMsg,
   logCallback
 }) {
   const resolvedPath = path.resolve(dirPath);
   const targetBranch = branch ? branch.trim() : 'main';
-  const msg = commitMessage ? commitMessage.trim() : 'Backup sync';
+  let msg = commitMessage ? commitMessage.trim() : 'Backup sync';
+
+  let tokenVal = token;
+  if (!tokenVal || tokenVal.trim() === '' || tokenVal === '••••••••••••••••••••') {
+    tokenVal = getStoredToken();
+  }
 
   const log = (txt) => { if (logCallback) logCallback(txt); };
   
@@ -732,6 +817,31 @@ async function runGitPushPipeline({
   // 5. Commit
   log('Committing changes...');
   try {
+    if (autoCommitMsg === 'true' || autoCommitMsg === true) {
+      const statusOutput = runCmdSync('git status --porcelain', resolvedPath);
+      if (statusOutput) {
+        const tempFileChanges = { modified: 0, untracked: 0, deleted: 0, total: 0, files: [] };
+        const lines = statusOutput.split('\n');
+        lines.forEach(line => {
+          if (!line || line.trim() === '') return;
+          tempFileChanges.total++;
+          const code = line.substring(0, 2);
+          const filePath = line.substring(3).trim();
+          tempFileChanges.files.push({ code: code.trim(), path: filePath });
+        });
+        let hasCommits = false;
+        try {
+          execSync('git rev-parse --verify HEAD', { cwd: resolvedPath, stdio: 'ignore' });
+          hasCommits = true;
+        } catch (e) {
+          hasCommits = false;
+        }
+        msg = generateSuggestedCommitMessage(tempFileChanges, hasCommits);
+      } else {
+        msg = 'Minor updates';
+      }
+      log(`Auto-generated commit message: "${msg}"`);
+    }
     execSync(`git commit -m "${msg.replace(/"/g, '\\"')}"`, { cwd: resolvedPath });
   } catch (err) {
     if (err.stdout && (err.stdout.includes('nothing to commit') || err.stdout.includes('clean'))) {
@@ -748,8 +858,8 @@ async function runGitPushPipeline({
   
   // 7. Remote setup
   let remoteUrlWithAuth = repoUrl.trim();
-  if (token && token.trim()) {
-    const cleanToken = token.trim();
+  if (tokenVal && tokenVal.trim()) {
+    const cleanToken = tokenVal.trim();
     if (remoteUrlWithAuth.startsWith('https://')) {
       remoteUrlWithAuth = `https://${cleanToken}@` + remoteUrlWithAuth.substring(8);
     }
@@ -764,13 +874,13 @@ async function runGitPushPipeline({
   // 8. Fetch & Pull Sync
   log('Checking remote changes...');
   try {
-    execSync('git fetch origin', { cwd: resolvedPath });
-    const remoteExists = execSync(`git ls-remote --heads origin ${targetBranch}`, { cwd: resolvedPath, encoding: 'utf8' }).trim();
+    execSync('git -c credential.helper= fetch origin', { cwd: resolvedPath });
+    const remoteExists = execSync(`git -c credential.helper= ls-remote --heads origin ${targetBranch}`, { cwd: resolvedPath, encoding: 'utf8' }).trim();
     if (remoteExists) {
       const behind = execSync(`git rev-list --count HEAD..origin/${targetBranch}`, { cwd: resolvedPath, encoding: 'utf8' }).trim();
       if (behind && parseInt(behind) > 0) {
         log(`Pulling remote updates (${behind} commits)...`);
-        execSync(`git pull --rebase origin ${targetBranch}`, { cwd: resolvedPath });
+        execSync(`git -c credential.helper= pull --rebase origin ${targetBranch}`, { cwd: resolvedPath });
       }
     }
   } catch (err) {
@@ -779,7 +889,7 @@ async function runGitPushPipeline({
   
   // 9. Push
   log('Pushing to GitHub...');
-  const pushCmd = `git push -u origin ${targetBranch} ${forcePush === 'true' || forcePush === true ? '--force' : ''}`;
+  const pushCmd = `git -c credential.helper= push -u origin ${targetBranch} ${forcePush === 'true' || forcePush === true ? '--force' : ''}`;
   execSync(pushCmd, { cwd: resolvedPath });
   log('Sync completed successfully!');
 }
@@ -801,20 +911,48 @@ function startWatcher(params) {
   addLog(`Started continuous sync backup monitor for path: ${dirPath}`);
   
   const runSync = async () => {
+    const watcherObj = backupWatchers.get(watcherId);
+    if (watcherObj) watcherObj.status = 'syncing';
     addLog('Change detected. Running sync backup...');
     try {
       await runGitPushPipeline({
         ...params,
         logCallback: (msg) => addLog(msg)
       });
+      if (watcherObj) watcherObj.status = 'active';
     } catch (err) {
-      addLog(`[ERROR] Sync failed: ${err.stderr || err.message}`);
+      let isConflict = false;
+      const errMsg = err.stderr || err.message || '';
+      if (errMsg.includes('conflict') || errMsg.includes('CONFLICT') || errMsg.includes('merge failed')) {
+        isConflict = true;
+      }
+      addLog(`[ERROR] Sync failed: ${errMsg}`);
+      if (watcherObj) {
+        watcherObj.status = isConflict ? 'conflict' : 'error';
+      }
     }
   };
   
   const fsWatcher = fs.watch(resolvedPath, { recursive: true }, (eventType, filename) => {
     if (!filename) return;
-    if (filename.includes('.git/') || filename === '.git' || filename.includes('.git\\')) return;
+    
+    // Normalize path separators to forward slashes for checking
+    const normalizedName = filename.replace(/\\/g, '/');
+    if (
+      normalizedName.includes('.git/') ||
+      normalizedName === '.git' ||
+      normalizedName.includes('node_modules/') ||
+      normalizedName.startsWith('node_modules') ||
+      normalizedName.includes('/node_modules/') ||
+      normalizedName.includes('dist/') ||
+      normalizedName.startsWith('dist') ||
+      normalizedName.includes('build/') ||
+      normalizedName.startsWith('build') ||
+      normalizedName.includes('.next/') ||
+      normalizedName.startsWith('.next')
+    ) {
+      return;
+    }
     
     addLog(`File changed: ${filename}`);
     
@@ -829,6 +967,7 @@ function startWatcher(params) {
     dirPath,
     params,
     logHistory,
+    status: 'active',
     startedAt: new Date()
   });
 }
@@ -847,7 +986,7 @@ function stopWatcher(watcherId) {
 
 // POST /api/backup/start
 app.post('/api/backup/start', (req, res) => {
-  const { dirPath, repoUrl, token, branch, commitMessage, forcePush, createGitignore, prePushCmd } = req.body;
+  const { dirPath, repoUrl, token, branch, commitMessage, forcePush, createGitignore, prePushCmd, autoCommitMsg } = req.body;
   
   if (!dirPath || !repoUrl) {
     return res.status(400).json({ error: 'Directory path and repo URL are required' });
@@ -865,6 +1004,7 @@ app.post('/api/backup/start', (req, res) => {
       forcePush: forcePush === true || forcePush === 'true',
       createGitignore: createGitignore === true || createGitignore === 'true',
       prePushCmd,
+      autoCommitMsg: autoCommitMsg === true || autoCommitMsg === 'true',
       watcherId
     });
     
@@ -895,6 +1035,7 @@ app.get('/api/backup/status', (req, res) => {
         watcherId: key,
         dirPath: value.dirPath,
         startedAt: value.startedAt,
+        status: value.status || 'active',
         logs: value.logHistory
       });
     });
@@ -909,6 +1050,7 @@ app.get('/api/backup/status', (req, res) => {
       watcherId,
       dirPath: item.dirPath,
       startedAt: item.startedAt,
+      status: item.status || 'active',
       logs: item.logHistory
     });
   } else {
@@ -920,7 +1062,12 @@ app.get('/api/backup/status', (req, res) => {
 app.post('/api/create-pr', (req, res) => {
   const { token, repoUrl, title, body, head, base } = req.body;
   
-  if (!token || !repoUrl || !title || !head || !base) {
+  let tokenVal = token;
+  if (!tokenVal || tokenVal.trim() === '' || tokenVal === '••••••••••••••••••••') {
+    tokenVal = getStoredToken();
+  }
+
+  if (!tokenVal || !repoUrl || !title || !head || !base) {
     return res.status(400).json({ error: 'Token, repoUrl, title, head, and base branch are required' });
   }
   
@@ -946,7 +1093,7 @@ app.post('/api/create-pr', (req, res) => {
     path: `/repos/${owner}/${repo}/pulls`,
     method: 'POST',
     headers: {
-      'Authorization': `token ${token.trim()}`,
+      'Authorization': `token ${tokenVal.trim()}`,
       'Accept': 'application/vnd.github.v3+json',
       'User-Agent': 'GitAutoPush-App',
       'Content-Type': 'application/json',
@@ -986,6 +1133,53 @@ app.post('/api/create-pr', (req, res) => {
   
   request.write(postData);
   request.end();
+});
+
+// Settings: Save Token on Server (Secure storage)
+app.post('/api/settings/token', (req, res) => {
+  const { token } = req.body;
+  try {
+    const configPath = path.join(__dirname, 'config.json');
+    let config = {};
+    if (fs.existsSync(configPath)) {
+      config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    }
+    config.githubToken = token ? token.trim() : '';
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: `Failed to save token: ${err.message}` });
+  }
+});
+
+// Settings: Check if Token exists on Server
+app.get('/api/settings/token-check', (req, res) => {
+  try {
+    const configPath = path.join(__dirname, 'config.json');
+    let hasToken = false;
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      hasToken = !!config.githubToken;
+    }
+    res.json({ hasToken });
+  } catch (err) {
+    res.json({ hasToken: false });
+  }
+});
+
+// Settings: Delete Token on Server
+app.post('/api/settings/token-delete', (req, res) => {
+  try {
+    const configPath = path.join(__dirname, 'config.json');
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      config.githubToken = '';
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
+    }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: `Failed to delete token: ${err.message}` });
+  }
 });
 
 app.listen(PORT, () => {

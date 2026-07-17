@@ -195,6 +195,13 @@
                 <button type="button" id="btn-suggest-message" class="btn-suggest hidden">🪄 Suggest Message</button>
               </div>
               <input type="text" id="commit-msg" value="Initial commit via GitAuto Push" placeholder="e.g. Initial commit" autocomplete="off" />
+              <div class="toggle-container" style="margin-top: 0.4rem; margin-bottom: 0.2rem;">
+                <label class="switch-label">
+                  <input type="checkbox" id="auto-commit-msg-toggle" checked />
+                  <span class="switch-slider"></span>
+                </label>
+                <span class="toggle-text" style="font-size: 0.8rem; color: var(--text-dim);">Auto-generate descriptive commit messages based on changes</span>
+              </div>
             </div>
             <div class="input-group-vertical">
               <label for="branch-name">Branch Name</label>

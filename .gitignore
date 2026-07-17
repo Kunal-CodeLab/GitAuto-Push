@@ -30,6 +30,7 @@ $RECYCLE.BIN/
 *.der
 credentials.json
 client_secret.json
+config.json
 
 # --- IDEs, Editors & User Settings ---
 .vscode/
