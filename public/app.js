@@ -22,6 +22,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const forcePushToggle = document.getElementById('force-push-toggle');
   const autoCommitMsgToggle = document.getElementById('auto-commit-msg-toggle');
   const btnPushAction = document.getElementById('btn-push-action');
+  const githubAccountSelect = document.getElementById('github-account-select');
+  const repoAccountModal = document.getElementById('repo-account-modal');
+  const btnCloseRepoAccount = document.getElementById('btn-close-repo-account');
+  const btnChooseKunal = document.getElementById('btn-choose-kunal');
+  const btnChooseCoder = document.getElementById('btn-choose-coder');
   
   const statPath = document.getElementById('stat-path');
   const statGitInit = document.getElementById('stat-git-init');
@@ -82,6 +87,35 @@ document.addEventListener('DOMContentLoaded', () => {
   loadSavedToken();
   loadSavedIdentity();
   loadSavedAutoCommitSetting();
+  loadSavedAccountSetting();
+
+  function loadSavedAccountSetting() {
+    try {
+      const savedAccount = localStorage.getItem('selected_github_account') || 'Kunal-CodeLab';
+      githubAccountSelect.value = savedAccount;
+      handleAccountChange();
+    } catch (e) {
+      console.error('Error loading saved account setting:', e);
+    }
+  }
+
+  function handleAccountChange() {
+    const selected = githubAccountSelect.value;
+    localStorage.setItem('selected_github_account', selected);
+    
+    const tokenGroup = document.querySelector('.token-group');
+    if (selected === 'custom') {
+      githubTokenInput.value = '';
+      githubTokenInput.disabled = false;
+      if (tokenGroup) tokenGroup.classList.remove('hidden');
+    } else {
+      githubTokenInput.value = '••••••••••••••••••••';
+      githubTokenInput.disabled = true;
+      if (tokenGroup) tokenGroup.classList.add('hidden');
+    }
+  }
+
+  githubAccountSelect.addEventListener('change', handleAccountChange);
 
   function loadSavedAutoCommitSetting() {
     try {
@@ -574,33 +608,35 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Create repo action trigger
-  btnCreateRepoAction.addEventListener('click', async () => {
-    const token = githubTokenInput.value.trim();
+  btnCreateRepoAction.addEventListener('click', () => {
     const repoName = newRepoNameInput.value.trim();
-    const checkedPrivacy = document.querySelector('input[name="repo-privacy"]:checked');
-    const isPrivate = checkedPrivacy ? checkedPrivacy.value === 'private' : false;
-
-    if (!token) {
-      showCreateRepoFeedback('Please enter your GitHub Personal Access Token (PAT) in Step 4 first!', 'error');
-      githubTokenInput.scrollIntoView({ behavior: 'smooth' });
-      githubTokenInput.focus();
-      return;
-    }
-
     if (!repoName) {
       showCreateRepoFeedback('Please enter a repository name.', 'error');
       newRepoNameInput.focus();
       return;
     }
 
-    showCreateRepoFeedback('Creating repository on GitHub...', 'info');
+    // Open the popup modal to ask which account to create the repo under
+    repoAccountModal.classList.remove('hidden');
+  });
+
+  // Modal helper to finalize repo creation with chosen account
+  async function finalizeCreateRepo(githubAccount) {
+    repoAccountModal.classList.add('hidden');
+    
+    const token = githubTokenInput.value.trim();
+    const repoName = newRepoNameInput.value.trim();
+    const checkedPrivacy = document.querySelector('input[name="repo-privacy"]:checked');
+    const isPrivate = checkedPrivacy ? checkedPrivacy.value === 'private' : false;
+
+    showCreateRepoFeedback(`Creating repository under account "${githubAccount}"...`, 'info');
     btnCreateRepoAction.disabled = true;
 
     try {
       const response = await fetch('/api/create-repo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, repoName, isPrivate })
+        body: JSON.stringify({ token, repoName, isPrivate, githubAccount })
       });
       
       const data = await response.json();
@@ -612,7 +648,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       if (data.success && data.htmlUrl) {
-        showCreateRepoFeedback(`Successfully created repository!`, 'success');
+        showCreateRepoFeedback(`Successfully created repository under ${githubAccount}!`, 'success');
         repoUrlInput.value = data.htmlUrl; // Set the repo url input automatically!
         
         // Collapse the create section after a short delay
@@ -627,6 +663,19 @@ document.addEventListener('DOMContentLoaded', () => {
       btnCreateRepoAction.disabled = false;
       showCreateRepoFeedback('Failed to connect to the backend server.', 'error');
       console.error(err);
+    }
+  }
+
+  btnChooseKunal.addEventListener('click', () => finalizeCreateRepo('Kunal-CodeLab'));
+  btnChooseCoder.addEventListener('click', () => finalizeCreateRepo('CoderKunal02'));
+  
+  btnCloseRepoAccount.addEventListener('click', () => {
+    repoAccountModal.classList.add('hidden');
+  });
+
+  repoAccountModal.addEventListener('click', (e) => {
+    if (e.target === repoAccountModal) {
+      repoAccountModal.classList.add('hidden');
     }
   });
 
@@ -786,6 +835,7 @@ document.addEventListener('DOMContentLoaded', () => {
     sseUrl.searchParams.append('forcePush', forcePush ? 'true' : 'false');
     sseUrl.searchParams.append('createGitignore', createGitignore ? 'true' : 'false');
     sseUrl.searchParams.append('autoCommitMsg', autoCommitMsgToggle.checked ? 'true' : 'false');
+    sseUrl.searchParams.append('githubAccount', githubAccountSelect.value);
     
     if (useOverride) {
       if (gitName) sseUrl.searchParams.append('username', gitName);
@@ -915,7 +965,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const response = await fetch('/api/backup/start', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ dirPath, repoUrl, token, branch, commitMessage, forcePush, createGitignore, prePushCmd, autoCommitMsg })
+          body: JSON.stringify({ dirPath, repoUrl, token, branch, commitMessage, forcePush, createGitignore, prePushCmd, autoCommitMsg, githubAccount })
         });
         const data = await response.json();
         if (data.success) {
@@ -1095,8 +1145,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const body = prBodyInput.value.trim();
     const base = prBaseInput.value.trim();
     const head = prHeadInput.value.trim();
+    const githubAccount = githubAccountSelect.value;
 
-    if (!token) {
+    if (githubAccount === 'custom' && !token) {
       showPrFeedback('GitHub Token is missing. Enter token in Step 4.', 'error');
       return;
     }
@@ -1112,7 +1163,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const response = await fetch('/api/create-pr', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, repoUrl, title, body, head, base })
+        body: JSON.stringify({ token, repoUrl, title, body, head, base, githubAccount })
       });
       const data = await response.json();
       btnCreatePrAction.disabled = false;
