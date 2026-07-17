@@ -12,15 +12,20 @@ GitAuto Push is a professional, developer-focused automation tool designed to st
 
 - **Local Workspace Scanner**: Scans folders instantly to detect Git status, active branch, commit history, and track unstaged file modifications.
 - **Custom Git Identity Override**: Allows setting custom author names and emails locally to prevent credential mismatches on shared systems.
-- **Universal `.gitignore` Generator**: Automatically provisions pre-configured rules mapping Node.js, Python, .NET, Java, and other environments if missing.
+- **Smart Tech-Stack Auto-Detection**: Inspects local folder structures dynamically for indicator files (such as package.json, requirements.txt, pubspec.yaml, build.gradle, Assets, csproj) to generate precise, custom-tailored .gitignore configurations matching only the active framework.
+- **Automated Security Scan & Hardening**: Scans the directory prior to staging for sensitive files (such as .pem, .key, .db, .sqlite, .sqlite3 files or filenames containing credentials, secret, token, password, config) and automatically appends them to .gitignore to prevent accidental remote exposure.
+- **Interactive .gitignore Editor & Preview UI**: Integrates a "Preview / Edit" trigger modal in Step 4 that allows developer inspection, editing, and live saving of .gitignore configurations directly from the frontend dashboard.
+- **Clean Global Ignore Blocks**: Consolidates and dynamically compiles global defaults (like .DS_Store, Thumbs.db, desktop.ini, ehthumbs.db, .vscode/, .idea/, .vs/, *.suo, *.log) to ignore system editor changes, keeping CPU usage low and avoiding false-positive background backup commits.
 - **Dynamic Commit Message Generation**: Analyzes porcelain statuses dynamically to compile descriptive, file-specific commit summaries automatically.
-- **Multi-Account Profile Management**: Configures multiple GitHub profiles (e.g. Kunal-CodeLab, CoderKunal02) and securely maps tokens server-side.
+- **Multi-Account Profile Management**: Configures multiple GitHub profiles (such as Kunal-CodeLab, CoderKunal02) and securely maps tokens server-side.
 - **Repository Creation Modal**: Prompts users with a popup selection overlay to instantly provision new repositories under any stored GitHub profile.
 - **Pre-Push Validation Checks**: Executes testing or linting commands (like npm test, pytest) before pushing to prevent shipping broken code.
-- **Continuous Watchdog Sync (CPU Optimized)**: Background file watcher automatically commits and syncs changes to remote repositories, optimized to ignore dependency and build directories (node_modules, dist, build, .next) for low CPU usage.
+- **Concurrent Task Execution Queue**: Processes manual git push commands and automatic watchdog sync events through an async serialization queue, eliminating .git/index.lock write collisions.
+- **Continuous Watchdog Sync (CPU Optimized)**: Background file watcher automatically commits and syncs changes to remote repositories, using the consolidated ignore rules to maintain zero idle CPU consumption.
 - **Safe Remote Syncing**: Pulls and rebases updates automatically before pushing, auto-aborting on merge conflicts.
 - **Conflict Alerts & Desktop Notifications**: Displays glowing alert states in the UI and sends browser desktop notifications when background tasks encounter merge conflicts.
 - **Non-Blocking Asynchronous Server**: All git execution pipelines run concurrently on asynchronous promises, ensuring the web interface remains fully responsive.
+- **Token Leak Prevention (Credential Helper)**: Injects tokens dynamically using command configuration arguments (-c credential.helper) during Git operations instead of saving plaintext credentials inside local .git/config remote origin URLs.
 - **Secure Token Storage**: Persists sensitive developer tokens in server-side configuration files protected by gitignore overrides, using front-end masking.
 
 ---
@@ -59,8 +64,8 @@ Ensure the following tools are installed:
    ```json
    {
      "githubAccounts": {
-       "Your-Account-Name": "your-pat-token-here",
-       "Your-Account-Name": "your-pat-token-here"
+       "Kunal-CodeLab": "your-pat-token-here",
+       "CoderKunal02": "your-pat-token-here"
      }
    }
    ```
@@ -86,9 +91,10 @@ Ensure the following tools are installed:
 
 1. **Scan Directory**: Provide the absolute folder path and click **Scan Folder**.
 2. **Select Profile**: Choose a pre-configured GitHub profile from the dropdown in Step 4. The raw token field will automatically be masked and secured.
-3. **Setup Remote**: Provide the repository remote target. Alternatively, click **Or Create New Repo on GitHub** to trigger the account selector modal and create a new repository instantly.
-4. **Push Changes**: Choose manual or auto-generated commit messages, run pre-push test checks if necessary, and click **Run Git Push Automation**.
-5. **Create PR**: After push completion, click the option in the success screen to automatically create a Pull Request to merge features into the default branch.
+3. **Preview/Edit Ignore List**: Click the **Preview / Edit** button next to the Gitignore checkbox to inspect and modify the generated gitignore rules.
+4. **Setup Remote**: Provide the repository remote target. Alternatively, click **Or Create New Repo on GitHub** to trigger the account selector modal and create a new repository instantly.
+5. **Push Changes**: Choose manual or auto-generated commit messages, run pre-push test checks if necessary, and click **Run Git Push Automation**.
+6. **Create PR**: After push completion, click the option in the success screen to automatically create a Pull Request to merge features into the default branch.
 
 ---
 
@@ -98,7 +104,7 @@ To generate credentials:
 1. Navigate to **GitHub Settings** > **Developer Settings** > **Personal Access Tokens** > **Tokens (classic)**.
 2. Click **Generate new token (classic)**.
 3. Grant **`repo`** (and optionally **`workflow`**) scopes.
-4. Save the generated key and copy it into the app settings.
+4. Save the generated key and copy it into the app settings or `config.json`.
 
 ---
 
