@@ -59,8 +59,8 @@ Ensure the following tools are installed:
    ```json
    {
      "githubAccounts": {
-       "Kunal-CodeLab": "your-pat-token-here",
-       "CoderKunal02": "your-pat-token-here"
+       "Your-Account-Name": "your-pat-token-here",
+       "Your-Account-Name": "your-pat-token-here"
      }
    }
    ```
