@@ -1192,4 +1192,108 @@ document.addEventListener('DOMContentLoaded', () => {
     prFeedback.className = `status-feedback ${type}`;
     prFeedback.classList.remove('hidden');
   }
+
+  // --- GITIGNORE EDITOR PREVIEW HANDLERS ---
+  const btnPreviewGitignore = document.getElementById('btn-preview-gitignore');
+  const gitignorePreviewModal = document.getElementById('gitignore-preview-modal');
+  const btnCloseGitignoreModal = document.getElementById('btn-close-gitignore-modal');
+  const btnCancelGitignore = document.getElementById('btn-cancel-gitignore');
+  const btnSaveGitignore = document.getElementById('btn-save-gitignore');
+  const gitignoreStackInfo = document.getElementById('gitignore-stack-info');
+  const gitignoreEditorTextarea = document.getElementById('gitignore-editor-textarea');
+  const gitignoreSaveFeedback = document.getElementById('gitignore-save-feedback');
+
+  if (btnPreviewGitignore) {
+    btnPreviewGitignore.addEventListener('click', async () => {
+      const dirPath = localPathInput.value.trim();
+      if (!dirPath) {
+        alert('Please enter and scan a local folder directory first before previewing the .gitignore.');
+        return;
+      }
+
+      // Show modal
+      gitignorePreviewModal.classList.remove('hidden');
+      gitignoreStackInfo.textContent = 'Scanning project tech stacks...';
+      gitignoreEditorTextarea.value = '';
+      gitignoreSaveFeedback.className = 'status-feedback hidden';
+
+      try {
+        const response = await fetch(`/api/gitignore/preview?dirPath=${encodeURIComponent(dirPath)}`);
+        const data = await response.json();
+
+        if (data.error) {
+          gitignoreStackInfo.textContent = 'Error scanning directory';
+          gitignoreEditorTextarea.value = `# Error: ${data.error}`;
+          return;
+        }
+
+        const stacks = data.stack && data.stack.length > 0 ? data.stack.join(', ') : 'none (defaulted to Web)';
+        gitignoreStackInfo.textContent = `Auto-detected Project Stacks: ${stacks}`;
+        gitignoreEditorTextarea.value = data.content;
+      } catch (err) {
+        gitignoreStackInfo.textContent = 'Failed to load gitignore configuration.';
+        gitignoreEditorTextarea.value = '# Error contacting backend server.';
+      }
+    });
+
+    const closeGitignoreModal = () => {
+      gitignorePreviewModal.classList.add('hidden');
+    };
+
+    btnCloseGitignoreModal.addEventListener('click', closeGitignoreModal);
+    btnCancelGitignore.addEventListener('click', closeGitignoreModal);
+
+    gitignorePreviewModal.addEventListener('click', (e) => {
+      if (e.target === gitignorePreviewModal) {
+        closeGitignoreModal();
+      }
+    });
+
+    btnSaveGitignore.addEventListener('click', async () => {
+      const dirPath = localPathInput.value.trim();
+      const content = gitignoreEditorTextarea.value;
+
+      gitignoreSaveFeedback.textContent = 'Saving .gitignore configuration...';
+      gitignoreSaveFeedback.className = 'status-feedback info';
+      gitignoreSaveFeedback.classList.remove('hidden');
+      btnSaveGitignore.disabled = true;
+
+      try {
+        const response = await fetch('/api/gitignore/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dirPath, content })
+        });
+        const data = await response.json();
+        btnSaveGitignore.disabled = false;
+
+        if (data.error) {
+          gitignoreSaveFeedback.textContent = `Error: ${data.error}`;
+          gitignoreSaveFeedback.className = 'status-feedback error';
+          return;
+        }
+
+        gitignoreSaveFeedback.textContent = 'Saved successfully!';
+        gitignoreSaveFeedback.className = 'status-feedback success';
+
+        // Refresh watcher ignore rules if active
+        if (backupToggle.checked) {
+          appendLog('[INFO] .gitignore updated. Restarting directory watcher to load new rules...');
+          // Trigger toggle restart
+          backupToggle.click();
+          setTimeout(() => {
+            backupToggle.click();
+          }, 500);
+        }
+
+        setTimeout(() => {
+          closeGitignoreModal();
+        }, 1000);
+      } catch (err) {
+        btnSaveGitignore.disabled = false;
+        gitignoreSaveFeedback.textContent = 'Failed to save configuration.';
+        gitignoreSaveFeedback.className = 'status-feedback error';
+      }
+    });
+  }
 });

@@ -219,12 +219,13 @@
           </div>
 
           <div class="option-switches">
-            <div class="toggle-container" style="margin-bottom: 0.5rem;">
+            <div class="toggle-container" style="margin-bottom: 0.5rem; align-items: center;">
               <label class="switch-label">
                 <input type="checkbox" id="gitignore-toggle" checked />
                 <span class="switch-slider"></span>
               </label>
               <span class="toggle-text">Auto-create .gitignore if missing (Node/Python defaults)</span>
+              <button type="button" id="btn-preview-gitignore" class="btn btn-secondary" style="margin-left: auto; font-size: 0.75rem; padding: 0.3rem 0.6rem; border-radius: 6px; width: auto; min-width: auto; height: auto;">⚙️ Preview / Edit</button>
             </div>
             <div class="toggle-container" style="margin-bottom: 0.5rem;">
               <label class="switch-label">
@@ -535,6 +536,30 @@
           <button id="btn-choose-coder" class="btn btn-secondary" style="padding: 0.9rem;">
             <span>CoderKunal02</span>
           </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- GITIGNORE PREVIEW & EDITOR MODAL -->
+  <div id="gitignore-preview-modal" class="modal-overlay hidden">
+    <div class="modal glass" style="max-width: 600px; width: 90%;">
+      <div class="modal-header">
+        <h2>Preview & Edit .gitignore</h2>
+        <button id="btn-close-gitignore-modal" class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="gitignore-stack-info" style="font-size: 0.85rem; color: var(--accent-color); margin-bottom: 1rem; font-weight: 500; text-align: left;">
+          Auto-detected Stacks: Loading...
+        </div>
+        <div class="input-group-vertical" style="text-align: left; margin-bottom: 1rem;">
+          <label for="gitignore-editor-textarea">File Rules Configuration</label>
+          <textarea id="gitignore-editor-textarea" style="width: 100%; height: 300px; background: rgba(0, 0, 0, 0.2); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-main); font-family: monospace; font-size: 0.85rem; padding: 0.75rem; resize: vertical; outline: none; line-height: 1.4;" placeholder="File rules..."></textarea>
+        </div>
+        <div id="gitignore-save-feedback" class="status-feedback hidden" style="margin-bottom: 1rem; text-align: left;"></div>
+        <div style="display: flex; gap: 0.8rem; justify-content: flex-end;">
+          <button id="btn-cancel-gitignore" class="btn btn-secondary" style="padding: 0.6rem 1.2rem; font-size: 0.85rem; width: auto;">Cancel</button>
+          <button id="btn-save-gitignore" class="btn btn-primary" style="padding: 0.6rem 1.2rem; font-size: 0.85rem; width: auto;">Save Changes</button>
         </div>
       </div>
     </div>

@@ -14,6 +14,42 @@ process.env.GCM_INTERACTIVE = 'never';
 // Global map to hold active backup watchers
 const backupWatchers = new Map();
 
+// Lightweight task queue to serialize Git operations and prevent locks (.git/index.lock)
+class GitQueue {
+  constructor() {
+    this.queue = [];
+    this.processing = false;
+  }
+
+  enqueue(taskFn) {
+    return new Promise((resolve, reject) => {
+      this.queue.push({ taskFn, resolve, reject });
+      this.processNext();
+    });
+  }
+
+  async processNext() {
+    if (this.processing || this.queue.length === 0) {
+      return;
+    }
+
+    this.processing = true;
+    const { taskFn, resolve, reject } = this.queue.shift();
+
+    try {
+      const result = await taskFn();
+      resolve(result);
+    } catch (err) {
+      reject(err);
+    } finally {
+      this.processing = false;
+      setImmediate(() => this.processNext());
+    }
+  }
+}
+
+const gitQueue = new GitQueue();
+
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -77,6 +113,388 @@ function getStoredTokenForAccount(accountName, fallbackToken) {
     }
   } catch (e) {}
   return fallbackToken || '';
+}
+
+// Helper to compile gitignore rules into regular expressions
+function compileGitignoreRules(resolvedPath) {
+  const gitignorePath = path.join(resolvedPath, '.gitignore');
+  const rules = [];
+  
+  const parseRule = (line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('!')) return;
+
+    let pattern = trimmed;
+    const isRootRelative = pattern.startsWith('/');
+    if (isRootRelative) {
+      pattern = pattern.substring(1);
+    }
+
+    const isDirOnly = pattern.endsWith('/');
+    if (isDirOnly) {
+      pattern = pattern.slice(0, -1);
+    }
+
+    let regexParts = pattern
+      .replace(/[-\/\\^$*+?.()|[\]{}]/g, (match) => {
+        if (match === '*') return '.*';
+        if (match === '?') return '.';
+        if (match === '/') return '\\/';
+        return '\\' + match;
+      });
+
+    let regexStr = '';
+    if (isRootRelative) {
+      regexStr = '^' + regexParts;
+    } else {
+      regexStr = '(^|\\/)' + regexParts;
+    }
+    regexStr += '(\\/|$)';
+
+    try {
+      rules.push({
+        raw: trimmed,
+        regex: new RegExp(regexStr)
+      });
+    } catch (e) {
+      // Ignore invalid regex
+    }
+  };
+
+  // Default rules that we always ignore globally (OS and IDEs)
+  const defaultRules = [
+    '.git/',
+    'node_modules/',
+    'dist/',
+    'build/',
+    '.next/',
+    '.DS_Store',
+    'Thumbs.db',
+    'desktop.ini',
+    'ehthumbs.db',
+    '.vscode/',
+    '.idea/',
+    '.vs/',
+    '*.suo',
+    '*.log'
+  ];
+  defaultRules.forEach(parseRule);
+
+  if (fs.existsSync(gitignorePath)) {
+    try {
+      const content = fs.readFileSync(gitignorePath, 'utf8');
+      const lines = content.split(/\r?\n/);
+      lines.forEach(parseRule);
+    } catch (e) {
+      console.error('Failed to read gitignore for rules:', e);
+    }
+  }
+
+  return rules;
+}
+
+// Helper to dynamically detect tech stack of a directory
+function detectTechStack(resolvedPath) {
+  const stack = [];
+  try {
+    // 1. Node.js / Web
+    if (fs.existsSync(path.join(resolvedPath, 'package.json')) || fs.existsSync(path.join(resolvedPath, 'package-lock.json'))) {
+      stack.push('node');
+    }
+    
+    // 2. Python
+    if (fs.existsSync(path.join(resolvedPath, 'requirements.txt')) || 
+        fs.existsSync(path.join(resolvedPath, 'Pipfile')) || 
+        fs.existsSync(path.join(resolvedPath, 'pyproject.toml')) || 
+        (fs.existsSync(resolvedPath) && fs.readdirSync(resolvedPath).some(file => file.endsWith('.py')))) {
+      stack.push('python');
+    }
+    
+    // 3. Flutter
+    if (fs.existsSync(path.join(resolvedPath, 'pubspec.yaml')) || fs.existsSync(path.join(resolvedPath, '.metadata'))) {
+      stack.push('flutter');
+    }
+    
+    // 4. Java / Gradle / Maven
+    if (fs.existsSync(path.join(resolvedPath, 'pom.xml')) || 
+        fs.existsSync(path.join(resolvedPath, 'build.gradle')) || 
+        fs.existsSync(path.join(resolvedPath, 'gradlew')) || 
+        fs.existsSync(path.join(resolvedPath, 'settings.gradle'))) {
+      stack.push('java');
+    }
+    
+    // 5. Unity
+    if (fs.existsSync(path.join(resolvedPath, 'Assets')) && fs.existsSync(path.join(resolvedPath, 'ProjectSettings'))) {
+      stack.push('unity');
+    }
+
+    // 6. .NET / C#
+    if (fs.existsSync(resolvedPath) && fs.readdirSync(resolvedPath).some(file => file.endsWith('.csproj') || file.endsWith('.sln'))) {
+      stack.push('dotnet');
+    }
+  } catch (e) {
+    console.error('Error detecting tech stack:', e);
+  }
+  return stack;
+}
+
+// Helper to construct customized gitignore rules based on detected stack
+function buildGitignoreContent(resolvedPath) {
+  const GITIGNORE_SECTIONS = {
+    header: `# ==========================================\n` +
+            `# AUTOMATICALLY GENERATED GITIGNORE (GITAUTO PUSH)\n` +
+            `# ==========================================\n\n`,
+    system: `# --- OS & System Files ---\n` +
+            `.DS_Store\n` +
+            `.DS_Store?\n` +
+            `._*\n` +
+            `.Spotlight-V100\n` +
+            `.Trashes\n` +
+            `ehthumbs.db\n` +
+            `Thumbs.db\n` +
+            `desktop.ini\n` +
+            `$RECYCLE.BIN/\n\n` +
+            `# --- Environment & Secret Keys (Credentials) ---\n` +
+            `.env\n` +
+            `.env.local\n` +
+            `.env.development.local\n` +
+            `.env.test.local\n` +
+            `.env.production.local\n` +
+            `.env*.local\n` +
+            `*.pem\n` +
+            `*.key\n` +
+            `*.pub\n` +
+            `*.pfx\n` +
+            `*.p12\n` +
+            `*.cer\n` +
+            `*.crt\n` +
+            `*.der\n` +
+            `credentials.json\n` +
+            `client_secret.json\n` +
+            `config.json\n\n` +
+            `# --- IDEs, Editors & User Settings ---\n` +
+            `.vscode/\n` +
+            `!.vscode/extensions.json\n` +
+            `!.vscode/launch.json\n` +
+            `!.vscode/tasks.json\n` +
+            `!.vscode/settings.json\n` +
+            `.idea/\n` +
+            `*.iws\n` +
+            `*.suo\n` +
+            `*.ntvs*\n` +
+            `*.njsproj\n` +
+            `*.swp\n` +
+            `*.swo\n` +
+            `*.user\n` +
+            `*.userosscache\n` +
+            `*.sln.docstates\n` +
+            `.vs/\n` +
+            `.history/\n` +
+            `.project\n` +
+            `.classpath\n` +
+            `.settings/\n\n`,
+    node:   `# --- Web & Node.js Build Outputs ---\n` +
+            `node_modules/\n` +
+            `jspm_packages/\n` +
+            `web_modules/\n` +
+            `bower_components/\n` +
+            `dist/\n` +
+            `build/\n` +
+            `out/\n` +
+            `.next/\n` +
+            `.nuxt/\n` +
+            `.cache/\n` +
+            `.eslintcache\n` +
+            `.stylelintcache\n` +
+            `.parcel-cache\n` +
+            `.yarn-cache/\n` +
+            `.pnpm-store/\n` +
+            `npm-debug.log*\n` +
+            `yarn-debug.log*\n` +
+            `yarn-error.log*\n` +
+            `pnpm-debug.log*\n\n`,
+    python: `# --- Python Build & Virtual Envs ---\n` +
+            `__pycache__/\n` +
+            `*.py[cod]\n` +
+            `*$py.class\n` +
+            `.Python\n` +
+            `env/\n` +
+            `venv/\n` +
+            `.venv/\n` +
+            `ENV/\n` +
+            `env.bak/\n` +
+            `venv.bak/\n` +
+            `pip-log.txt\n` +
+            `pip-delete-this-directory.txt\n` +
+            `.ipynb_checkpoints\n` +
+            `.mypy_cache/\n` +
+            `.pytest_cache/\n` +
+            `.tox/\n\n`,
+    dotnet: `# --- .NET Build Outputs (C# / F#) ---\n` +
+            `[Bb]in/\n` +
+            `[Oo]bj/\n` +
+            `[Rr]elease/\n` +
+            `[Dd]ebug/\n` +
+            `*.userprefs\n` +
+            `*.usertasks\n` +
+            `*.pdb\n\n`,
+    java:   `# --- Java, Kotlin & Gradle Build Outputs ---\n` +
+            `.gradle/\n` +
+            `/build/\n` +
+            `!/src/**/build/\n` +
+            `.gradletasknamecache\n` +
+            `/target/\n` +
+            `pom.xml.tag\n` +
+            `pom.xml.releaseBackup\n` +
+            `pom.xml.next\n` +
+            `release.properties\n` +
+            `*.class\n\n`,
+    flutter:`# --- Flutter Build Outputs ---\n` +
+            `.dart_tool/\n` +
+            `.packages\n` +
+            `.flutter-plugins\n` +
+            `.flutter-plugins-dependencies\n` +
+            `.pub-cache/\n` +
+            `.pub/\n\n`,
+    unity:  `# --- Unity & Game Dev Build Outputs ---\n` +
+            `/[Ll]ibrary/\n` +
+            `/[Tt]emp/\n` +
+            `/[Oo]bj/\n` +
+            `/[Bb]uild/\n` +
+            `/[Bb]uilds/\n` +
+            `/[Ll]ogs/\n` +
+            `/[MemoryCaptures]/\n` +
+            `Assets/AssetStoreTools*\n\n`,
+    logs:   `# --- Logs & Databases ---\n` +
+            `*.log\n` +
+            `*.sqlite\n` +
+            `*.sqlite3\n` +
+            `*.db\n` +
+            `*.mdb\n` +
+            `*.ldf\n` +
+            `*.sql\n` +
+            `*.dmp\n`
+  };
+
+  let content = GITIGNORE_SECTIONS.header + GITIGNORE_SECTIONS.system;
+  const detectedStack = detectTechStack(resolvedPath);
+  
+  if (detectedStack.length === 0) {
+    // Fallback: Node.js (highly common)
+    content += GITIGNORE_SECTIONS.node;
+  } else {
+    detectedStack.forEach(stackKey => {
+      if (GITIGNORE_SECTIONS[stackKey]) {
+        content += GITIGNORE_SECTIONS[stackKey];
+      }
+    });
+  }
+  content += GITIGNORE_SECTIONS.logs;
+  return { content, stack: detectedStack };
+}
+
+// Helper function to recursively find and auto-ignore sensitive files
+function performSecurityHardening(resolvedPath, logFn) {
+  const gitignorePath = path.join(resolvedPath, '.gitignore');
+  if (!fs.existsSync(gitignorePath)) {
+    return;
+  }
+
+  try {
+    const gitignoreContent = fs.readFileSync(gitignorePath, 'utf8');
+    const existingRules = gitignoreContent.split(/\r?\n/).map(line => line.trim());
+
+    // Helper to recursively list all files in directory up to depth 4
+    const getFiles = (dir, depth = 0) => {
+      if (depth > 4) return [];
+      let results = [];
+      try {
+        const list = fs.readdirSync(dir);
+        list.forEach(file => {
+          const fullPath = path.join(dir, file);
+          const stat = fs.statSync(fullPath);
+          const relativePath = path.relative(resolvedPath, fullPath).replace(/\\/g, '/');
+
+          // Skip default directories
+          if (
+            file === '.git' ||
+            file === 'node_modules' ||
+            file === 'dist' ||
+            file === 'build' ||
+            file === '.next'
+          ) {
+            return;
+          }
+
+          if (stat && stat.isDirectory()) {
+            results = results.concat(getFiles(fullPath, depth + 1));
+          } else {
+            results.push({ name: file, relPath: relativePath });
+          }
+        });
+      } catch (e) {
+        // Skip unreadable files or folders
+      }
+      return results;
+    };
+
+    const allFiles = getFiles(resolvedPath);
+    const sensitiveFilesToIgnore = [];
+
+    const sensitiveExtensions = ['.key', '.pem', '.db', '.sqlite', '.sqlite3', '.pfx', '.p12'];
+    const sensitiveKeywords = ['secret', 'config', 'token', 'password', 'credential'];
+    const codeExtensions = ['.js', '.jsx', '.ts', '.tsx', '.py', '.java', '.cs', '.cpp', '.c', '.h', '.html', '.css', '.md'];
+
+    allFiles.forEach(file => {
+      const ext = path.extname(file.name).toLowerCase();
+      const fullNameLower = file.name.toLowerCase();
+
+      // Don't auto-ignore core code files to avoid breaking projects
+      if (codeExtensions.includes(ext)) {
+        return;
+      }
+
+      let isSensitive = false;
+
+      // Check extensions
+      if (sensitiveExtensions.includes(ext)) {
+        isSensitive = true;
+      }
+
+      // Check keywords
+      if (!isSensitive) {
+        isSensitive = sensitiveKeywords.some(keyword => {
+          return fullNameLower.includes(keyword);
+        });
+      }
+
+      if (isSensitive) {
+        // Check if it's already ignored in some form in .gitignore
+        const isAlreadyIgnored = existingRules.some(rule => {
+          if (!rule || rule.startsWith('#')) return false;
+          return rule === file.relPath || rule === file.name || rule === `*${ext}`;
+        });
+
+        if (!isAlreadyIgnored) {
+          sensitiveFilesToIgnore.push(file.relPath);
+        }
+      }
+    });
+
+    if (sensitiveFilesToIgnore.length > 0) {
+      logFn(`[SECURITY] Auto-detected ${sensitiveFilesToIgnore.length} sensitive file(s) that might leak: ${sensitiveFilesToIgnore.join(', ')}`);
+      logFn(`[SECURITY] Automatically appending these paths to .gitignore for leak prevention.`);
+      
+      let appendStr = '\n\n# --- Auto-detected Sensitive Credentials & Database Files ---\n';
+      sensitiveFilesToIgnore.forEach(relPath => {
+        appendStr += `${relPath}\n`;
+      });
+      
+      fs.appendFileSync(gitignorePath, appendStr, 'utf8');
+    }
+  } catch (err) {
+    console.error('Error during security scan:', err);
+  }
 }
 
 // Helper to generate rule-based commit message suggestions
@@ -311,7 +729,11 @@ app.get('/api/git-push', (req, res) => {
         return str.replace(new RegExp(tokenVal, 'g'), 'ghp_******');
       };
 
-      const finalArgs = (cmd === 'git') ? ['-c', 'credential.helper=', ...args] : args;
+      const finalArgs = (cmd === 'git')
+        ? (tokenVal
+            ? ['-c', 'credential.helper=', '-c', `credential.helper="!echo username=token; echo password=${tokenVal.trim()}; #"`, ...args]
+            : ['-c', 'credential.helper=', ...args])
+        : args;
       const proc = spawn(cmd, finalArgs, { cwd: resolvedPath, shell: true });
       let stdout = '';
       let stderr = '';
@@ -344,6 +766,10 @@ app.get('/api/git-push', (req, res) => {
 
   // Run the sequence of automation steps
   async function execute() {
+    let credOpts = '-c credential.helper=';
+    if (tokenVal && tokenVal.trim()) {
+      credOpts = `-c credential.helper= -c credential.helper="!echo username=token; echo password=${tokenVal.trim()}; #"`;
+    }
     try {
       // --- PRE-PUSH QUALITY CHECKS ---
       if (prePushCmd && prePushCmd.trim()) {
@@ -396,146 +822,10 @@ app.get('/api/git-push', (req, res) => {
       if (createGitignore === 'true') {
         const gitignorePath = path.join(resolvedPath, '.gitignore');
         if (!fs.existsSync(gitignorePath)) {
-          sendLog('[INFO] No .gitignore file detected. Creating a standard .gitignore file to exclude node_modules, build directories, and environment/log files...');
-          const STANDARD_GITIGNORE = `# ==========================================\n` +
-            `# UNIVERSAL GITIGNORE (COVERS WEB, .NET, ANDROID, PYTHON, GAMES & MORE)\n` +
-            `# ==========================================\n\n` +
-            `# --- OS & System Files ---\n` +
-            `.DS_Store\n` +
-            `.DS_Store?\n` +
-            `._*\n` +
-            `.Spotlight-V100\n` +
-            `.Trashes\n` +
-            `ehthumbs.db\n` +
-            `Thumbs.db\n` +
-            `desktop.ini\n` +
-            `$RECYCLE.BIN/\n\n` +
-            `# --- Environment & Secret Keys (Credentials) ---\n` +
-            `.env\n` +
-            `.env.local\n` +
-            `.env.development.local\n` +
-            `.env.test.local\n` +
-            `.env.production.local\n` +
-            `.env*.local\n` +
-            `*.pem\n` +
-            `*.key\n` +
-            `*.pub\n` +
-            `*.pfx\n` +
-            `*.p12\n` +
-            `*.cer\n` +
-            `*.crt\n` +
-            `*.der\n` +
-            `credentials.json\n` +
-            `client_secret.json\n\n` +
-            `# --- IDEs, Editors & User Settings ---\n` +
-            `.vscode/\n` +
-            `!.vscode/extensions.json\n` +
-            `!.vscode/launch.json\n` +
-            `!.vscode/tasks.json\n` +
-            `!.vscode/settings.json\n` +
-            `.idea/\n` +
-            `*.iws\n` +
-            `*.suo\n` +
-            `*.ntvs*\n` +
-            `*.njsproj\n` +
-            `*.swp\n` +
-            `*.swo\n` +
-            `*.user\n` +
-            `*.userosscache\n` +
-            `*.sln.docstates\n` +
-            `.vs/\n` +
-            `.history/\n` +
-            `.project\n` +
-            `.classpath\n` +
-            `.settings/\n\n` +
-            `# --- Web & Node.js Build Outputs ---\n` +
-            `node_modules/\n` +
-            `jspm_packages/\n` +
-            `web_modules/\n` +
-            `bower_components/\n` +
-            `dist/\n` +
-            `build/\n` +
-            `out/\n` +
-            `.next/\n` +
-            `.nuxt/\n` +
-            `.cache/\n` +
-            `.eslintcache\n` +
-            `.stylelintcache\n` +
-            `.parcel-cache\n` +
-            `.yarn-cache/\n` +
-            `.pnpm-store/\n` +
-            `npm-debug.log*\n` +
-            `yarn-debug.log*\n` +
-            `yarn-error.log*\n` +
-            `pnpm-debug.log*\n\n` +
-            `# --- Python Build & Virtual Envs ---\n` +
-            `__pycache__/\n` +
-            `*.py[cod]\n` +
-            `*$py.class\n` +
-            `.Python\n` +
-            `env/\n` +
-            `venv/\n` +
-            `.venv/\n` +
-            `ENV/\n` +
-            `env.bak/\n` +
-            `venv.bak/\n` +
-            `pip-log.txt\n` +
-            `pip-delete-this-directory.txt\n` +
-            `.ipynb_checkpoints\n` +
-            `.mypy_cache/\n` +
-            `.pytest_cache/\n` +
-            `.tox/\n\n` +
-            `# --- .NET Build Outputs (C# / F#) ---\n` +
-            `[Bb]in/\n` +
-            `[Oo]bj/\n` +
-            `[Rr]elease/\n` +
-            `[Dd]ebug/\n` +
-            `*.userprefs\n` +
-            `*.usertasks\n` +
-            `*.pdb\n\n` +
-            `# --- Java, Kotlin & Gradle Build Outputs ---\n` +
-            `.gradle/\n` +
-            `/build/\n` +
-            `!/src/**/build/\n` +
-            `.gradletasknamecache\n` +
-            `/target/\n` +
-            `pom.xml.tag\n` +
-            `pom.xml.releaseBackup\n` +
-            `pom.xml.next\n` +
-            `release.properties\n` +
-            `*.class\n\n` +
-            `# --- Android Build Outputs ---\n` +
-            `*.dex\n` +
-            `/captures/\n` +
-            `.externalNativeBuild/\n` +
-            `.cxx/\n` +
-            `local.properties\n\n` +
-            `# --- Flutter Build Outputs ---\n` +
-            `.dart_tool/\n` +
-            `.packages\n` +
-            `.flutter-plugins\n` +
-            `.flutter-plugins-dependencies\n` +
-            `.pub-cache/\n` +
-            `.pub/\n\n` +
-            `# --- Unity & Game Dev Build Outputs ---\n` +
-            `/[Ll]ibrary/\n` +
-            `/[Tt]emp/\n` +
-            `/[Oo]bj/\n` +
-            `/[Bb]uild/\n` +
-            `/[Bb]uilds/\n` +
-            `/[Ll]ogs/\n` +
-            `/[MemoryCaptures]/\n` +
-            `Assets/AssetStoreTools*\n\n` +
-            `# --- Logs & Databases ---\n` +
-            `*.log\n` +
-            `*.sqlite\n` +
-            `*.sqlite3\n` +
-            `*.db\n` +
-            `*.mdb\n` +
-            `*.ldf\n` +
-            `*.sql\n` +
-            `*.dmp\n`;
-          fs.writeFileSync(gitignorePath, STANDARD_GITIGNORE, 'utf8');
+          const { content: customGitignore, stack } = buildGitignoreContent(resolvedPath);
+          sendLog(`[INFO] No .gitignore detected. Auto-detected project stacks: ${stack.join(', ') || 'none (defaulted to Web)'}.`);
+          sendLog('Creating a customized, clean .gitignore file...');
+          fs.writeFileSync(gitignorePath, customGitignore, 'utf8');
         } else {
           sendLog('[INFO] Found existing .gitignore. Skipping creation.');
         }
@@ -543,6 +833,11 @@ app.get('/api/git-push', (req, res) => {
 
       // --- STEP 3: Stage Files ---
       sendStep('stage', 'running');
+      try {
+        performSecurityHardening(resolvedPath, sendLog);
+      } catch (secErr) {
+        sendLog(`[WARNING] Security hardening scan encountered a warning: ${secErr.message || secErr}`);
+      }
       sendLog('Staging all files in the directory...');
       await runCommand('git', ['add', '.'], 'stage');
       sendStep('stage', 'success');
@@ -598,31 +893,19 @@ app.get('/api/git-push', (req, res) => {
       // --- STEP 6: Configure Remote ---
       sendStep('remote', 'running');
       
-      // Format remote URL with token if provided
-      let remoteUrlWithAuth = repoUrl.trim();
-      if (tokenVal && tokenVal.trim()) {
-        const cleanToken = tokenVal.trim();
-        const rawUrl = repoUrl.trim();
-        if (rawUrl.startsWith('https://')) {
-          remoteUrlWithAuth = `https://${cleanToken}@` + rawUrl.substring(8);
-        } else if (rawUrl.startsWith('http://')) {
-          remoteUrlWithAuth = `http://${cleanToken}@` + rawUrl.substring(7);
-        }
-      }
+      const cleanRemoteUrl = repoUrl.trim();
 
       // Check if origin exists
       const hasOrigin = runCmdSync('git remote get-url origin', resolvedPath);
       if (hasOrigin) {
         sendLog('Remote "origin" already exists. Updating URL...');
-        await runCommand('git', ['remote', 'set-url', 'origin', `"${remoteUrlWithAuth}"`], 'remote');
+        await runCommand('git', ['remote', 'set-url', 'origin', `"${cleanRemoteUrl}"`], 'remote');
       } else {
         sendLog('Adding new remote "origin"...');
-        await runCommand('git', ['remote', 'add', 'origin', `"${remoteUrlWithAuth}"`], 'remote');
+        await runCommand('git', ['remote', 'add', 'origin', `"${cleanRemoteUrl}"`], 'remote');
       }
       
-      // Print masked remote URL to logs
-      const maskedUrl = tokenVal ? repoUrl : remoteUrlWithAuth;
-      sendLog(`Configured remote URL: ${maskedUrl}`);
+      sendLog(`Configured remote URL: ${cleanRemoteUrl}`);
       sendStep('remote', 'success');
 
       // --- REMOTE SYNC CHECK (FETCH & REBASE PULL) ---
@@ -640,7 +923,7 @@ app.get('/api/git-push', (req, res) => {
         sendLog('Checking for remote updates before pushing...');
         try {
           await runCommand('git', ['fetch', 'origin'], 'remote');
-          const remoteBranchExists = runCmdSync(`git ls-remote --heads origin ${targetBranch}`, resolvedPath);
+          const remoteBranchExists = runCmdSync(`git ${credOpts} ls-remote --heads origin ${targetBranch}`, resolvedPath);
           if (remoteBranchExists) {
             const behindCount = runCmdSync(`git rev-list --count HEAD..origin/${targetBranch}`, resolvedPath);
             if (behindCount && parseInt(behindCount) > 0) {
@@ -704,7 +987,55 @@ app.get('/api/git-push', (req, res) => {
     }
   }
 
-  execute();
+  sendLog('Waiting for repository lock (queued)...');
+  gitQueue.enqueue(async () => {
+    sendLog('Lock acquired. Starting Git Push Automation...');
+    await execute();
+  }).catch(err => {
+    // Already handled inside execute()
+  });
+});
+
+// GET /api/gitignore/preview
+app.get('/api/gitignore/preview', (req, res) => {
+  const { dirPath } = req.query;
+  if (!dirPath) {
+    return res.status(400).json({ error: 'Directory path is required' });
+  }
+
+  const resolvedPath = path.resolve(dirPath);
+  const gitignorePath = path.join(resolvedPath, '.gitignore');
+
+  if (fs.existsSync(gitignorePath)) {
+    try {
+      const content = fs.readFileSync(gitignorePath, 'utf8');
+      return res.json({ content, isNew: false, stack: detectTechStack(resolvedPath) });
+    } catch (e) {
+      return res.status(500).json({ error: `Failed to read existing .gitignore: ${e.message}` });
+    }
+  } else {
+    // Generate stack-based template
+    const { content, stack } = buildGitignoreContent(resolvedPath);
+    return res.json({ content, isNew: true, stack });
+  }
+});
+
+// POST /api/gitignore/save
+app.post('/api/gitignore/save', (req, res) => {
+  const { dirPath, content } = req.body;
+  if (!dirPath || content === undefined) {
+    return res.status(400).json({ error: 'Directory path and content are required' });
+  }
+
+  const resolvedPath = path.resolve(dirPath);
+  const gitignorePath = path.join(resolvedPath, '.gitignore');
+
+  try {
+    fs.writeFileSync(gitignorePath, content, 'utf8');
+    return res.json({ success: true, message: 'Successfully saved .gitignore configuration!' });
+  } catch (e) {
+    return res.status(500).json({ error: `Failed to save .gitignore: ${e.message}` });
+  }
 });
 
 // Endpoint to create a repository on GitHub
@@ -819,9 +1150,17 @@ async function runGitPushPipeline({
   if (createGitignore === 'true' || createGitignore === true) {
     const gitignorePath = path.join(resolvedPath, '.gitignore');
     if (!fs.existsSync(gitignorePath)) {
-      log('Creating default .gitignore...');
-      fs.writeFileSync(gitignorePath, 'node_modules/\ndist/\nbuild/\n.env\n', 'utf8');
+      const { content: customGitignore, stack } = buildGitignoreContent(resolvedPath);
+      log(`No .gitignore detected. Creating custom .gitignore for stacks: ${stack.join(', ') || 'none (defaulted to Web)'}...`);
+      fs.writeFileSync(gitignorePath, customGitignore, 'utf8');
     }
+  }
+  
+  // 3.5. Automated Security Scan (Credentials Prevention)
+  try {
+    performSecurityHardening(resolvedPath, log);
+  } catch (secErr) {
+    log(`[WARNING] Security hardening scan skipped: ${secErr.message}`);
   }
   
   // 4. Git add
@@ -870,31 +1209,30 @@ async function runGitPushPipeline({
   // 6. Branch
   execSync(`git branch -M ${targetBranch}`, { cwd: resolvedPath });
   
-  // 7. Remote setup
-  let remoteUrlWithAuth = repoUrl.trim();
-  if (tokenVal && tokenVal.trim()) {
-    const cleanToken = tokenVal.trim();
-    if (remoteUrlWithAuth.startsWith('https://')) {
-      remoteUrlWithAuth = `https://${cleanToken}@` + remoteUrlWithAuth.substring(8);
-    }
-  }
+  // 7. Remote setup (Clean URL without token)
+  const cleanRemoteUrl = repoUrl.trim();
   try {
     execSync('git remote get-url origin', { cwd: resolvedPath });
-    execSync(`git remote set-url origin "${remoteUrlWithAuth}"`, { cwd: resolvedPath });
+    execSync(`git remote set-url origin "${cleanRemoteUrl}"`, { cwd: resolvedPath });
   } catch (e) {
-    execSync(`git remote add origin "${remoteUrlWithAuth}"`, { cwd: resolvedPath });
+    execSync(`git remote add origin "${cleanRemoteUrl}"`, { cwd: resolvedPath });
+  }
+  
+  let credOpts = '-c credential.helper=';
+  if (tokenVal && tokenVal.trim()) {
+    credOpts = `-c credential.helper= -c credential.helper="!echo username=token; echo password=${tokenVal.trim()}; #"`;
   }
   
   // 8. Fetch & Pull Sync
   log('Checking remote changes...');
   try {
-    execSync('git -c credential.helper= fetch origin', { cwd: resolvedPath });
-    const remoteExists = execSync(`git -c credential.helper= ls-remote --heads origin ${targetBranch}`, { cwd: resolvedPath, encoding: 'utf8' }).trim();
+    execSync(`git ${credOpts} fetch origin`, { cwd: resolvedPath });
+    const remoteExists = execSync(`git ${credOpts} ls-remote --heads origin ${targetBranch}`, { cwd: resolvedPath, encoding: 'utf8' }).trim();
     if (remoteExists) {
       const behind = execSync(`git rev-list --count HEAD..origin/${targetBranch}`, { cwd: resolvedPath, encoding: 'utf8' }).trim();
       if (behind && parseInt(behind) > 0) {
         log(`Pulling remote updates (${behind} commits)...`);
-        execSync(`git -c credential.helper= pull --rebase origin ${targetBranch}`, { cwd: resolvedPath });
+        execSync(`git ${credOpts} pull --rebase origin ${targetBranch}`, { cwd: resolvedPath });
       }
     }
   } catch (err) {
@@ -903,7 +1241,7 @@ async function runGitPushPipeline({
   
   // 9. Push
   log('Pushing to GitHub...');
-  const pushCmd = `git -c credential.helper= push -u origin ${targetBranch} ${forcePush === 'true' || forcePush === true ? '--force' : ''}`;
+  const pushCmd = `git ${credOpts} push -u origin ${targetBranch} ${forcePush === 'true' || forcePush === true ? '--force' : ''}`;
   execSync(pushCmd, { cwd: resolvedPath });
   log('Sync completed successfully!');
 }
@@ -924,14 +1262,21 @@ function startWatcher(params) {
   
   addLog(`Started continuous sync backup monitor for path: ${dirPath}`);
   
+  // Compile ignore rules from .gitignore dynamically on startup
+  const gitignoreRules = compileGitignoreRules(resolvedPath);
+  addLog(`Loaded ${gitignoreRules.length} file watching ignore rules (including defaults).`);
+
   const runSync = async () => {
     const watcherObj = backupWatchers.get(watcherId);
     if (watcherObj) watcherObj.status = 'syncing';
-    addLog('Change detected. Running sync backup...');
+    addLog('Change detected. Waiting in queue for repository lock...');
     try {
-      await runGitPushPipeline({
-        ...params,
-        logCallback: (msg) => addLog(msg)
+      await gitQueue.enqueue(async () => {
+        addLog('Lock acquired. Running background sync...');
+        await runGitPushPipeline({
+          ...params,
+          logCallback: (msg) => addLog(msg)
+        });
       });
       if (watcherObj) watcherObj.status = 'active';
     } catch (err) {
@@ -952,19 +1297,10 @@ function startWatcher(params) {
     
     // Normalize path separators to forward slashes for checking
     const normalizedName = filename.replace(/\\/g, '/');
-    if (
-      normalizedName.includes('.git/') ||
-      normalizedName === '.git' ||
-      normalizedName.includes('node_modules/') ||
-      normalizedName.startsWith('node_modules') ||
-      normalizedName.includes('/node_modules/') ||
-      normalizedName.includes('dist/') ||
-      normalizedName.startsWith('dist') ||
-      normalizedName.includes('build/') ||
-      normalizedName.startsWith('build') ||
-      normalizedName.includes('.next/') ||
-      normalizedName.startsWith('.next')
-    ) {
+    
+    // Check path against compiled ignore rules
+    const shouldIgnore = gitignoreRules.some(rule => rule.regex.test(normalizedName));
+    if (shouldIgnore) {
       return;
     }
     
