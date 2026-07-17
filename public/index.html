@@ -167,6 +167,15 @@
           <h2>Authentication & Commit Settings</h2>
         </div>
         <div class="card-body">
+          <div class="input-group-vertical" style="margin-bottom: 1rem;">
+            <label for="github-account-select">GitHub Account Profile</label>
+            <select id="github-account-select" class="form-select" style="width: 100%; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border-color); color: var(--text-main); padding: 0.75rem 1rem; border-radius: 8px; font-family: var(--font-sans); outline: none; transition: var(--transition);">
+              <option value="Kunal-CodeLab" style="background: var(--bg-color);">Kunal-CodeLab (Saved)</option>
+              <option value="CoderKunal02" style="background: var(--bg-color);">CoderKunal02 (Saved)</option>
+              <option value="custom" style="background: var(--bg-color);">Use Custom Token...</option>
+            </select>
+          </div>
+
           <div class="input-group-vertical token-group">
             <div class="label-with-help">
               <label for="github-token">GitHub Personal Access Token (PAT) <span class="badge">Recommended</span></label>
@@ -506,6 +515,27 @@
           <span>Create Pull Request</span>
         </button>
         <div id="pr-feedback" class="status-feedback hidden"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- REPOSITORY ACCOUNT SELECTION MODAL -->
+  <div id="repo-account-modal" class="modal-overlay hidden">
+    <div class="modal glass" style="max-width: 400px;">
+      <div class="modal-header">
+        <h2>Choose GitHub Account</h2>
+        <button id="btn-close-repo-account" class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body" style="text-align: center;">
+        <p style="margin-bottom: 1.5rem; font-size: 0.95rem; color: var(--text-muted);">Under which account do you want to create the new repository?</p>
+        <div style="display: flex; flex-direction: column; gap: 0.8rem;">
+          <button id="btn-choose-kunal" class="btn btn-primary" style="padding: 0.9rem;">
+            <span>Kunal-CodeLab</span>
+          </button>
+          <button id="btn-choose-coder" class="btn btn-secondary" style="padding: 0.9rem;">
+            <span>CoderKunal02</span>
+          </button>
+        </div>
       </div>
     </div>
   </div>
