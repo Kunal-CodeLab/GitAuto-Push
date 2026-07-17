@@ -10,23 +10,69 @@ GitAuto Push is a professional, developer-focused automation tool designed to st
 
 ## Key Features
 
-- **Local Workspace Scanner**: Scans folders instantly to detect Git status, active branch, commit history, and track unstaged file modifications.
-- **Custom Git Identity Override**: Allows setting custom author names and emails locally to prevent credential mismatches on shared systems.
-- **Smart Tech-Stack Auto-Detection**: Inspects local folder structures dynamically for indicator files (such as package.json, requirements.txt, pubspec.yaml, build.gradle, Assets, csproj) to generate precise, custom-tailored .gitignore configurations matching only the active framework.
-- **Automated Security Scan & Hardening**: Scans the directory prior to staging for sensitive files (such as .pem, .key, .db, .sqlite, .sqlite3 files or filenames containing credentials, secret, token, password, config) and automatically appends them to .gitignore to prevent accidental remote exposure.
-- **Interactive .gitignore Editor & Preview UI**: Integrates a "Preview / Edit" trigger modal in Step 4 that allows developer inspection, editing, and live saving of .gitignore configurations directly from the frontend dashboard.
-- **Clean Global Ignore Blocks**: Consolidates and dynamically compiles global defaults (like .DS_Store, Thumbs.db, desktop.ini, ehthumbs.db, .vscode/, .idea/, .vs/, *.suo, *.log) to ignore system editor changes, keeping CPU usage low and avoiding false-positive background backup commits.
-- **Dynamic Commit Message Generation**: Analyzes porcelain statuses dynamically to compile descriptive, file-specific commit summaries automatically.
-- **Multi-Account Profile Management**: Configures multiple GitHub profiles (such as Kunal-CodeLab, CoderKunal02) and securely maps tokens server-side.
-- **Repository Creation Modal**: Prompts users with a popup selection overlay to instantly provision new repositories under any stored GitHub profile.
-- **Pre-Push Validation Checks**: Executes testing or linting commands (like npm test, pytest) before pushing to prevent shipping broken code.
-- **Concurrent Task Execution Queue**: Processes manual git push commands and automatic watchdog sync events through an async serialization queue, eliminating .git/index.lock write collisions.
-- **Continuous Watchdog Sync (CPU Optimized)**: Background file watcher automatically commits and syncs changes to remote repositories, using the consolidated ignore rules to maintain zero idle CPU consumption.
-- **Safe Remote Syncing**: Pulls and rebases updates automatically before pushing, auto-aborting on merge conflicts.
-- **Conflict Alerts & Desktop Notifications**: Displays glowing alert states in the UI and sends browser desktop notifications when background tasks encounter merge conflicts.
-- **Non-Blocking Asynchronous Server**: All git execution pipelines run concurrently on asynchronous promises, ensuring the web interface remains fully responsive.
-- **Token Leak Prevention (Credential Helper)**: Injects tokens dynamically using command configuration arguments (-c credential.helper) during Git operations instead of saving plaintext credentials inside local .git/config remote origin URLs.
-- **Secure Token Storage**: Persists sensitive developer tokens in server-side configuration files protected by gitignore overrides, using front-end masking.
+The capabilities of GitAuto Push are structured into four core developer-focused modules:
+
+### 1. Automation & Watchdog Sync
+
+* **Continuous Watchdog Sync (CPU Optimized)**
+  Background file watcher automatically commits and syncs changes to remote repositories. Utilizes consolidated ignore rules to maintain zero idle CPU consumption.
+
+* **Concurrent Task Execution Queue**
+  Processes manual git push commands and automatic watchdog sync events through an async serialization queue, eliminating `.git/index.lock` write collisions.
+
+* **Dynamic Commit Message Generation**
+  Analyzes porcelain statuses dynamically to compile descriptive, file-specific commit summaries automatically.
+
+* **Pre-Push Validation Checks**
+  Executes testing or linting commands (like `npm test`, `pytest`) before pushing to prevent shipping broken code.
+
+---
+
+### 2. Smart Gitignore Engine
+
+* **Smart Tech-Stack Auto-Detection**
+  Inspects local folder structures dynamically for indicator files (such as `package.json`, `requirements.txt`, `pubspec.yaml`, `build.gradle`, `Assets`, `csproj`) to generate precise, custom-tailored `.gitignore` configurations matching only the active framework.
+
+* **Automated Security Scan & Hardening**
+  Scans the directory prior to staging for sensitive files (such as `.pem`, `.key`, `.db`, `.sqlite`, `.sqlite3` files or filenames containing credentials, secret, token, password, config) and automatically appends them to `.gitignore` to prevent accidental remote exposure.
+
+* **Clean Global Ignore Blocks**
+  Consolidates and dynamically compiles global defaults (like `.DS_Store`, `Thumbs.db`, `desktop.ini`, `ehthumbs.db`, `.vscode/`, `.idea/`, `.vs/`, `*.suo`, `*.log`) to ignore system editor changes, keeping CPU usage low and avoiding false-positive background backup commits.
+
+* **Interactive .gitignore Editor & Preview UI**
+  Integrates a "Preview / Edit" trigger modal in Step 4 that allows developer inspection, editing, and live saving of `.gitignore` configurations directly from the frontend dashboard.
+
+---
+
+### 3. Security & Token Protection
+
+* **Token Leak Prevention (Credential Helper)**
+  Injects tokens dynamically using command configuration arguments (`-c credential.helper`) during Git operations instead of saving plaintext credentials inside local `.git/config` remote origin URLs.
+
+* **Secure Token Storage**
+  Persists sensitive developer tokens in server-side configuration files protected by gitignore overrides, using front-end masking.
+
+* **Multi-Account Profile Management**
+  Configures multiple GitHub profiles (such as `Kunal-CodeLab`, `CoderKunal02`) and securely maps tokens server-side.
+
+* **Repository Creation Modal**
+  Prompts users with a popup selection overlay to instantly provision new repositories under any stored GitHub profile.
+
+---
+
+### 4. Developer Experience & Alerts
+
+* **Local Workspace Scanner**
+  Scans folders instantly to detect Git status, active branch, commit history, and track unstaged file modifications.
+
+* **Custom Git Identity Override**
+  Allows setting custom author names and emails locally to prevent credential mismatches on shared systems.
+
+* **Safe Remote Syncing**
+  Pulls and rebases updates automatically before pushing, auto-aborting on merge conflicts.
+
+* **Conflict Alerts & Desktop Notifications**
+  Displays glowing alert states in the UI and sends browser desktop notifications when background tasks encounter merge conflicts.
 
 ---
 
