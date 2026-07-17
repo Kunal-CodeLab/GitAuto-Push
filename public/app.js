@@ -946,6 +946,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const createGitignore = gitignoreToggle.checked;
     const prePushCmd = prepushToggle.checked ? prepushCmdInput.value.trim() : '';
     const autoCommitMsg = autoCommitMsgToggle.checked;
+    const githubAccount = githubAccountSelect.value;
 
     if (!dirPath || !repoUrl) {
       backupToggle.checked = false;

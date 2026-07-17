@@ -55,16 +55,28 @@ function checkGitInstalledAsync() {
   });
 }
 
-// Helper to get stored GitHub PAT token from server-side config file
-function getStoredToken() {
+// Helper to get stored GitHub PAT token from server-side config file based on account name
+function getStoredTokenForAccount(accountName, fallbackToken) {
   try {
     const configPath = path.join(__dirname, 'config.json');
     if (fs.existsSync(configPath)) {
       const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      if (accountName && config.githubAccounts && config.githubAccounts[accountName]) {
+        return config.githubAccounts[accountName];
+      }
+      if (config.githubAccounts) {
+        const accounts = Object.keys(config.githubAccounts);
+        if (accounts.length > 0) {
+          if (fallbackToken && fallbackToken !== '••••••••••••••••••••' && fallbackToken.trim() !== '') {
+            return fallbackToken;
+          }
+          return config.githubAccounts[accountName || accounts[0]] || '';
+        }
+      }
       return config.githubToken || '';
     }
   } catch (e) {}
-  return '';
+  return fallbackToken || '';
 }
 
 // Helper to generate rule-based commit message suggestions
@@ -232,12 +244,13 @@ app.get('/api/git-push', (req, res) => {
     branch,
     forcePush,
     createGitignore,
-    prePushCmd
+    prePushCmd,
+    githubAccount
   } = req.query;
 
   let tokenVal = token;
-  if (!tokenVal || tokenVal.trim() === '' || tokenVal === '••••••••••••••••••••') {
-    tokenVal = getStoredToken();
+  if (!tokenVal || tokenVal.trim() === '' || tokenVal === '••••••••••••••••••••' || githubAccount !== 'custom') {
+    tokenVal = getStoredTokenForAccount(githubAccount, token);
   }
 
   // Set SSE Headers
@@ -696,11 +709,11 @@ app.get('/api/git-push', (req, res) => {
 
 // Endpoint to create a repository on GitHub
 app.post('/api/create-repo', (req, res) => {
-  const { token, repoName, isPrivate } = req.body;
+  const { token, repoName, isPrivate, githubAccount } = req.body;
 
   let tokenVal = token;
-  if (!tokenVal || tokenVal.trim() === '' || tokenVal === '••••••••••••••••••••') {
-    tokenVal = getStoredToken();
+  if (!tokenVal || tokenVal.trim() === '' || tokenVal === '••••••••••••••••••••' || githubAccount !== 'custom') {
+    tokenVal = getStoredTokenForAccount(githubAccount, token);
   }
 
   if (!tokenVal) {
@@ -775,6 +788,7 @@ async function runGitPushPipeline({
   createGitignore,
   prePushCmd,
   autoCommitMsg,
+  githubAccount,
   logCallback
 }) {
   const resolvedPath = path.resolve(dirPath);
@@ -782,8 +796,8 @@ async function runGitPushPipeline({
   let msg = commitMessage ? commitMessage.trim() : 'Backup sync';
 
   let tokenVal = token;
-  if (!tokenVal || tokenVal.trim() === '' || tokenVal === '••••••••••••••••••••') {
-    tokenVal = getStoredToken();
+  if (!tokenVal || tokenVal.trim() === '' || tokenVal === '••••••••••••••••••••' || githubAccount !== 'custom') {
+    tokenVal = getStoredTokenForAccount(githubAccount, token);
   }
 
   const log = (txt) => { if (logCallback) logCallback(txt); };
@@ -986,7 +1000,7 @@ function stopWatcher(watcherId) {
 
 // POST /api/backup/start
 app.post('/api/backup/start', (req, res) => {
-  const { dirPath, repoUrl, token, branch, commitMessage, forcePush, createGitignore, prePushCmd, autoCommitMsg } = req.body;
+  const { dirPath, repoUrl, token, branch, commitMessage, forcePush, createGitignore, prePushCmd, autoCommitMsg, githubAccount } = req.body;
   
   if (!dirPath || !repoUrl) {
     return res.status(400).json({ error: 'Directory path and repo URL are required' });
@@ -1005,6 +1019,7 @@ app.post('/api/backup/start', (req, res) => {
       createGitignore: createGitignore === true || createGitignore === 'true',
       prePushCmd,
       autoCommitMsg: autoCommitMsg === true || autoCommitMsg === 'true',
+      githubAccount,
       watcherId
     });
     
@@ -1060,11 +1075,11 @@ app.get('/api/backup/status', (req, res) => {
 
 // POST /api/create-pr
 app.post('/api/create-pr', (req, res) => {
-  const { token, repoUrl, title, body, head, base } = req.body;
+  const { token, repoUrl, title, body, head, base, githubAccount } = req.body;
   
   let tokenVal = token;
-  if (!tokenVal || tokenVal.trim() === '' || tokenVal === '••••••••••••••••••••') {
-    tokenVal = getStoredToken();
+  if (!tokenVal || tokenVal.trim() === '' || tokenVal === '••••••••••••••••••••' || githubAccount !== 'custom') {
+    tokenVal = getStoredTokenForAccount(githubAccount, token);
   }
 
   if (!tokenVal || !repoUrl || !title || !head || !base) {
