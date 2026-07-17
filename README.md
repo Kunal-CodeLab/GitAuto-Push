@@ -1,48 +1,49 @@
-# 🚀 GitAuto Push — Zero-Friction Git Automation Tool
+# GitAuto Push - Zero-Friction Git Automation Tool
 
 [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D%2014.0.0-green.svg)](https://nodejs.org/)
-[![Developer](https://img.shields.io/badge/Made%20By-Kunal%20Choudhary-cyan.svg)](#-author)
+[![Developer](https://img.shields.io/badge/Made%20By-Kunal%20Choudhary-cyan.svg)](#author)
 
-**GitAuto Push** is a premium, developer-focused automation tool designed to eliminate the friction of managing Git repositories. Built with a stunning dark glassmorphic user interface and powered by a robust Node.js backend, GitAuto Push handles repository initialization, configuration, file tracking, change detection, and pushing to remote repositories—all from a single, unified dashboard.
-
----
-
-## ✨ Key Features
-
-- 📂 **Local Workspace Scanner**: Scan any folder instantly. Detects whether it is already a Git repository, shows current branch name, checks repository commit history, and tracks pending file modifications, additions, and deletions in real-time.
-- ⚙️ **Custom local Git Identity Override**: Easily set custom name and email configurations locally for a project, avoiding common Gmail or account mismatches on shared systems without altering global configurations.
-- 📁 **Universal `.gitignore` Auto-Generator**: Automatically creates a highly comprehensive, pre-configured `.gitignore` file mapping environments for Node.js, Python, .NET, Java, Unity, Flutter, system logs, IDE profiles, and security files if one is missing.
-- 🪄 **Smart Commit Message Engine**: Analyzes your workspace's porcelain status and suggests descriptive, rule-based commit messages (e.g. `Modify index.html; add style.css`) automatically.
-- 🔄 **Safe Remote Syncing (Fetch & Rebase)**: Performs automatic fetch checks before pushing. If the local repository is behind the remote, it executes an automated `git pull --rebase` to merge changes smoothly, auto-aborting on merge conflicts to keep code safe.
-- 🛠️ **Quality Validation Pipeline (Pre-push Check)**: Enable and run automated tests or quality validation commands (like `npm test`, `pytest`, `eslint .`) before pushing to verify builds never break.
-- 🔐 **Secure PAT Integration**: Input and store Personal Access Tokens (PATs) securely in local browser storage to bypass command-line authentication prompts during push operations.
-- 🌍 **GitHub Repository Creator**: Create a brand new public or private repository on GitHub directly from the app interface using GitHub REST API.
-- 🔀 **Automated Pull Request (PR) Generator**: Generate a new PR directly from your pushed branches to merge into base branches without opening the browser.
-- 🛡️ **Watchdog Mode (Continuous Backup & Sync)**: Monitor local folders continuously in the background. Watches for file modifications and automatically stages, commits, and pushes changes to keep remote backups in sync.
-- 📜 **Server-Sent Events (SSE) Live Terminal Logs**: Stream live console execution logs in real-time to a simulated retro CRT terminal on the dashboard.
+GitAuto Push is a professional, developer-focused automation tool designed to streamline local workspace Git operations and repository synchronization. Built with a responsive glassmorphic dark interface and backed by an optimized Node.js server, GitAuto Push handles repository initialization, configuration, change tracking, and remote publishing from a single dashboard.
 
 ---
 
-## 🛠️ Technology Stack
+## Key Features
 
-- **Frontend**: Responsive HTML5, Vanilla JavaScript, CSS3 custom HSL styling with glassmorphism, dynamic neon indicators, and micro-animations.
-- **Backend**: Node.js, Express web server, Server-Sent Events (SSE) log stream, child process spawners.
-- **Git Operations**: System git shell hooks, rebase loops, and standard repository controls.
+- **Local Workspace Scanner**: Scans folders instantly to detect Git status, active branch, commit history, and track unstaged file modifications.
+- **Custom Git Identity Override**: Allows setting custom author names and emails locally to prevent credential mismatches on shared systems.
+- **Universal `.gitignore` Generator**: Automatically provisions pre-configured rules mapping Node.js, Python, .NET, Java, and other environments if missing.
+- **Dynamic Commit Message Generation**: Analyzes porcelain statuses dynamically to compile descriptive, file-specific commit summaries automatically.
+- **Multi-Account Profile Management**: Configures multiple GitHub profiles (e.g. Kunal-CodeLab, CoderKunal02) and securely maps tokens server-side.
+- **Repository Creation Modal**: Prompts users with a popup selection overlay to instantly provision new repositories under any stored GitHub profile.
+- **Pre-Push Validation Checks**: Executes testing or linting commands (like npm test, pytest) before pushing to prevent shipping broken code.
+- **Continuous Watchdog Sync (CPU Optimized)**: Background file watcher automatically commits and syncs changes to remote repositories, optimized to ignore dependency and build directories (node_modules, dist, build, .next) for low CPU usage.
+- **Safe Remote Syncing**: Pulls and rebases updates automatically before pushing, auto-aborting on merge conflicts.
+- **Conflict Alerts & Desktop Notifications**: Displays glowing alert states in the UI and sends browser desktop notifications when background tasks encounter merge conflicts.
+- **Non-Blocking Asynchronous Server**: All git execution pipelines run concurrently on asynchronous promises, ensuring the web interface remains fully responsive.
+- **Secure Token Storage**: Persists sensitive developer tokens in server-side configuration files protected by gitignore overrides, using front-end masking.
 
 ---
 
-## 🚀 Getting Started
+## Technical Stack
+
+- **Frontend**: Responsive HTML5, Vanilla JavaScript, CSS3 HSL styling with micro-animations.
+- **Backend**: Node.js, Express web server, Server-Sent Events (SSE) live progress streams.
+- **Git Hook Engine**: Custom async process wrappers mapping local shell binaries.
+
+---
+
+## Installation & Setup
 
 ### Prerequisites
 
-Make sure you have the following installed on your machine:
+Ensure the following tools are installed:
 - **Node.js** (v14.0.0 or higher)
-- **Git** command-line interface
+- **Git** command-line utility
 
 ### Installation
 
-1. **Clone or Download the Project**:
+1. **Clone the Repository**:
    ```bash
    git clone https://github.com/Kunal-CodeLab/GitAuto-Push.git
    cd GitAuto-Push
@@ -53,59 +54,60 @@ Make sure you have the following installed on your machine:
    npm install
    ```
 
-3. **Start the Application**:
+3. **Configure Profiles**:
+   Add profile tokens inside the server-side configuration file `config.json`:
+   ```json
+   {
+     "githubAccounts": {
+       "Kunal-CodeLab": "your-pat-token-here",
+       "CoderKunal02": "your-pat-token-here"
+     }
+   }
+   ```
+
+4. **Start the Server**:
    ```bash
    npm start
    ```
-   Or for hot-reloading development:
+   Or for development mode:
    ```bash
    npm run dev
    ```
 
-4. **Access the Web Dashboard**:
-   Open your browser and navigate to:
+5. **Access the Application**:
+   Navigate to:
    ```
    http://localhost:5005
    ```
 
 ---
 
-## 📖 How to Use
+## Usage Guide
 
-1. **Scan Local Directory**: Paste the absolute path of the directory you wish to track (e.g. `C:\Users\Username\Projects\my-app`) and click **Scan Folder**.
-2. **Setup Repository**: If the project lacks a `.git` folder, the tool will initialize it. You can toggle auto-creating a `.gitignore` if needed.
-3. **Set Remote GitHub URL**: Input your remote repository URL.
-   - *Optional:* If you do not have a repository, click **[+] Or Create New Repo on GitHub**, fill in the token, name, and privacy type, and create it instantly.
-4. **Setup Authentication**: Paste your Personal Access Token (PAT) for GitHub. Check **Remember token securely** to save it locally.
-5. **Git Push**:
-   - Check/update Git Custom Credentials if you want local project authorship overrides.
-   - Type a custom commit message or click the **🪄 Suggest Message** button.
-   - Check **Run test checks** and input a command (like `npm test`) if you want build validation.
-   - Click **Run Git Push Automation**.
-6. **Create PR**: Once a push succeeds, a success popup will offer to open the repository on GitHub or create a **Pull Request (PR)** directly.
+1. **Scan Directory**: Provide the absolute folder path and click **Scan Folder**.
+2. **Select Profile**: Choose a pre-configured GitHub profile from the dropdown in Step 4. The raw token field will automatically be masked and secured.
+3. **Setup Remote**: Provide the repository remote target. Alternatively, click **Or Create New Repo on GitHub** to trigger the account selector modal and create a new repository instantly.
+4. **Push Changes**: Choose manual or auto-generated commit messages, run pre-push test checks if necessary, and click **Run Git Push Automation**.
+5. **Create PR**: After push completion, click the option in the success screen to automatically create a Pull Request to merge features into the default branch.
 
 ---
 
-## 📝 GitHub Personal Access Token (PAT) Guide
+## Personal Access Token (PAT) Configuration
 
-To use token authentication and bypass browser popup logins:
-1. Log in to [GitHub.com](https://github.com).
-2. Go to **Settings** &rarr; **Developer Settings** &rarr; **Personal Access Tokens** &rarr; **Tokens (classic)**.
-3. Click **Generate new token (classic)**.
-4. Set a name, expiration, and select the **`repo`** scope (full control of repositories).
-5. Click **Generate Token** and copy the code (begins with `ghp_`).
-6. Paste the token into the GitAuto Push interface.
+To generate credentials:
+1. Navigate to **GitHub Settings** > **Developer Settings** > **Personal Access Tokens** > **Tokens (classic)**.
+2. Click **Generate new token (classic)**.
+3. Grant **`repo`** (and optionally **`workflow`**) scopes.
+4. Save the generated key and copy it into the app settings.
 
 ---
 
-## 🤝 Author
+## Author
 
 Designed, built, and maintained by **Kunal Choudhary**.
 
-Feel free to open issues or pull requests to improve the tool!
-
 ---
 
-## 📄 License
+## License
 
-This project is open-source and licensed under the [MIT License](LICENSE).
+This project is licensed under the [MIT License](LICENSE).
